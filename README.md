@@ -2,6 +2,10 @@
   <img src="https://raw.githubusercontent.com/peltonapp/Pelton/13f56136136bc00b9c8721dc2042fc9c84e1b3a7/.github/pelton-large-bg.png" alt="Pelton Banner">
 </p>
 
+<p align="center">
+  <a href="README.md">English</a> &nbsp;·&nbsp; <a href="README.zh-CN.md">简体中文</a>
+</p>
+
 
 <p align="center">
   <a href="https://github.com/peltonapp/Pelton/blob/main/LICENSE">
