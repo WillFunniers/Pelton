@@ -1,0 +1,132 @@
+name: Label pull requests
+
+# Labels a pull request from two things it already carries: the conventional
+# type in its title, and the paths it touches. Both are facts about the PR, so
+# the result is the same on every run and reviewable in this file.
+#
+# pull_request_target runs from the base repo, which is what gives a fork's PR
+# a token that can write labels. Nothing from the fork is checked out or run
+# here: the job only reads the file list back through the API.
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+# a fresh push while the previous run is still going replaces it, so two runs
+# never reconcile the same PR against different file lists.
+concurrency:
+  group: label-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const pr = context.payload.pull_request
+
+            // Labels this workflow owns. It adds and removes only these, so a
+            // label applied by hand (blocked, security, good first issue, ...)
+            // is never touched.
+            const TYPE = {
+              feat: ['enhancement'],
+              fix: ['bug'],
+              perf: ['performance'],
+              docs: ['documentation'],
+              refactor: ['refactor', 'no-changelog'],
+              chore: ['chore', 'no-changelog'],
+              ci: ['chore', 'no-changelog'],
+              build: ['chore', 'no-changelog'],
+              test: ['chore', 'no-changelog'],
+              style: ['chore', 'no-changelog'],
+            }
+            const AREA = [
+              'area: backend',
+              'area: frontend',
+              'area: localization',
+              'area: ci',
+              'area: packaging',
+            ]
+            const managed = new Set([...Object.values(TYPE).flat(), ...AREA])
+
+            const desired = new Set()
+
+            // the type comes from the conventional prefix, e.g. "fix(sync): ...".
+            // A title that does not parse contributes nothing rather than
+            // guessing, and the title check reports that separately.
+            const m = pr.title.match(/^(\w+)(\([^)]*\))?!?:/)
+            if (m && TYPE[m[1]]) {
+              for (const l of TYPE[m[1]]) desired.add(l)
+            }
+
+            // the area comes from the paths. Each file lands in exactly one
+            // area, most specific first, so a translation-only PR is not also
+            // labelled as frontend.
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              per_page: 100,
+            })
+
+            function areaFor(path) {
+              if (path.startsWith('frontend/src/lib/locales/')) return 'area: localization'
+              if (path.startsWith('frontend/')) return 'area: frontend'
+              if (path.startsWith('.github/workflows/')) return 'area: ci'
+              if (
+                path.startsWith('packaging/') ||
+                path.startsWith('build/') ||
+                path.startsWith('.github/nfpm/') ||
+                path.startsWith('.github/copr/')
+              ) {
+                return 'area: packaging'
+              }
+              if (
+                path.startsWith('internal/') ||
+                path.startsWith('cmd/') ||
+                path.endsWith('.go') ||
+                path === 'go.mod' ||
+                path === 'go.sum'
+              ) {
+                return 'area: backend'
+              }
+              return undefined
+            }
+
+            for (const f of files) {
+              const area = areaFor(f.filename)
+              if (area) desired.add(area)
+            }
+
+            // reconcile: the difference between what the PR should carry and
+            // what it carries now, restricted to the labels above.
+            const current = new Set(pr.labels.map((l) => l.name))
+            const toAdd = [...desired].filter((l) => !current.has(l))
+            const toRemove = [...current].filter((l) => managed.has(l) && !desired.has(l))
+
+            const issue = {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+            }
+            if (toAdd.length) {
+              await github.rest.issues.addLabels({ ...issue, labels: toAdd })
+            }
+            for (const name of toRemove) {
+              // a label removed by hand between the read and here 404s, which
+              // is the state we wanted anyway.
+              await github.rest.issues.removeLabel({ ...issue, name }).catch((e) => {
+                if (e.status !== 404) throw e
+              })
+            }
+
+            core.summary.addHeading('Labels', 3)
+            core.summary.addRaw(`Added: ${toAdd.join(', ') || 'none'}\n\n`)
+            core.summary.addRaw(`Removed: ${toRemove.join(', ') || 'none'}\n`)
+            await core.summary.write()

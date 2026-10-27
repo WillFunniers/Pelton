@@ -1,0 +1,29 @@
+# Pelton
+
+> Pelton is a free, open source, privacy-focused email client for macOS,
+> Windows, and Linux, built with Go and Wails on the backend and Svelte on
+> the frontend. No telemetry, no analytics, no third-party servers in the
+> data path.
+
+Every documentation page is also available as raw markdown at the same
+path with a `.md` extension, e.g. `/install/macos.md` next to the rendered
+`/install/macos/`.
+
+## Docs
+
+- [Install](https://docs.pelton.app/install/index.md): install Pelton on Windows, macOS, or Linux, or build it from source.
+- [Updating](https://docs.pelton.app/updating.md): how to update Pelton on every platform.
+- [Setting up a mailbox](https://docs.pelton.app/mailbox/index.md): connect Gmail, iCloud, Outlook, Purelymail, Fastmail, Yahoo, or a generic IMAP/SMTP account.
+- [Features](https://docs.pelton.app/features/shortcuts.md): shortcuts, the command palette, link/attachment scanning, and encryption keys.
+- [Themes](https://docs.pelton.app/themes/index.md): the theme format and how to create one.
+- [Support](https://docs.pelton.app/support.md): how to get help, report a bug, or reach the team.
+
+## Reference
+
+- [Versioning](https://docs.pelton.app/versioning.md): how Pelton's version numbers work.
+- [CLI flags](https://docs.pelton.app/cli-flags.md): command-line flags Pelton accepts.
+- [FAQ](https://docs.pelton.app/faq.md): frequently asked questions.
+
+## Machine-readable reference
+
+- [AGENTS.md](https://docs.pelton.app/AGENTS.md): a condensed technical reference (install commands, data locations, network behavior, internals) written for AI agents and scripts rather than human readers.

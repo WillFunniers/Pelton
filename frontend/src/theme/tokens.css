@@ -1,0 +1,433 @@
+/*
+  tokens.css is the single source of truth for every color, space, radius, font
+  and size in pelton. a theme is nothing more than one of these named token sets.
+  the default theme lives here as light and dark variants so that "more themes
+  later" means shipping another token set in this exact shape, not refactoring
+  components. user generated themes would be another file overriding the same
+  variables.
+
+  hard rule: components reference these variables and never literal values. a hex
+  or px sneaking into a component is a bug.
+
+  token contract (the complete surface every theme must define):
+    surfaces   --surface-base/raised/overlay/sunken/hover, --selection-bg
+    text       --text-primary/secondary/tertiary/inverse, --link
+    borders    --border-subtle/default/strong, --hairline (width)
+    accent     --accent (runtime), --accent-fg (runtime), --selection-bg, --link
+    semantic   --success/-bg, --warning/-bg, --danger/-bg
+    radii      --radius-control, --radius-card, --radius-none
+    fonts      --font-ui, --font-mono
+    type       --fz-list, --fz-body, --fz-label, --fz-meta, --fz-heading, weights
+    spacing    --space-1..6 (fixed) plus density driven row/pane spacing
+    elevation  --shadow-overlay
+
+  accent handling:
+    --accent is injected at runtime from the user's chosen hex (default #465AF2).
+    --accent-fg (black or white) is computed in accent.ts from the hex luminance
+    so text on an accent surface stays legible for any chosen color.
+    --selection-bg and --link are derived from --accent here with color-mix so we
+    only ever ask the user for one color. dark mode lightens the link derivation.
+*/
+
+:root {
+  /* fonts. bundled locally via @fontsource, no runtime cdn.
+
+     The two Noto faces sit after the system stack and before the generic, and
+     cover the scripts Familjen Grotesk and Spline Sans Mono do not: Arabic and
+     Han. Naming a face that has not been loaded costs nothing, since css skips
+     a family it cannot resolve, so they can be listed unconditionally here and
+     are only ever fetched by the language that needs them (theme/rtlfont.ts,
+     theme/cjkfont.ts). Listing them after the system stack keeps the platform's
+     own face first, which is what a reader expects to see.
+
+     They have to be named in the default stacks and not only appended to a
+     stack the user picked, or a reader on the default font would download the
+     face and never render a glyph with it. */
+  --font-ui: "Familjen Grotesk", system-ui, -apple-system, "Noto Sans Arabic", "Noto Sans SC", sans-serif;
+  --font-mono: "Spline Sans Mono", ui-monospace, "SFMono-Regular", "Noto Sans Arabic", "Noto Sans SC", monospace;
+
+  /* type sizes. message list 13px, body 13-14, labels/meta 11-12. */
+  --fz-meta: 11px;
+  --fz-label: 12px;
+  --fz-list: 13px;
+  --fz-body: 14px;
+  --fz-heading: 16px;
+  --fz-title: 20px;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  /* fixed spacing scale. density only swaps the row/pane tokens further down. */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 24px;
+
+  /* radii. 5px for controls and cards; 0 for single-sided accent borders. */
+  --radius-control: 5px;
+  --radius-card: 5px;
+  --radius-none: 0;
+
+  /* borders are hairlines throughout. */
+  --hairline: 0.5px;
+
+  /* cursor shown over anything clickable that is not a hyperlink. native
+     desktop apps use the arrow there, browsers use the hand; the appearance
+     setting flips this on the root, see :root[data-cursor="hand"] below. */
+  --cursor-action: default;
+
+  /* how much room the macos traffic lights need at the top left of a window
+     with no native title bar: --titlebar-lights vertically, --titlebar-inset
+     from the left edge. zero everywhere else, see :root[data-titlebar="mac"]. */
+  --titlebar-lights: 0px;
+  --titlebar-inset: 0px;
+  /* how far the menu bar's labels lift off their centre line to sit level with
+     the traffic lights, which the system draws slightly above it. */
+  --titlebar-nudge: 0px;
+
+  /* accent. --accent and --accent-fg are overwritten at runtime by accent.ts.
+     the derivations below stay in css so they track whatever accent is set. */
+  --accent: #465af2;
+  --accent-fg: #ffffff;
+  --selection-bg: color-mix(in srgb, var(--accent) 14%, transparent);
+  --selection-bg-strong: color-mix(in srgb, var(--accent) 22%, transparent);
+  --link: var(--accent);
+
+  /* elevation, used sparingly for overlays and popovers. */
+  --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.18);
+
+  /* Wallpaper glass.
+     ------------------------------------------------------------------------
+     When a wallpaper is showing in a dark theme, the panes stop being opaque
+     slabs and become sheets of tinted glass over it (see the data-wallpaper
+     block below). These tokens are the surfaces the chrome paints, and they
+     exist as a separate set rather than by redefining --surface-* because
+     --surface-* is read back out of the dom by lib/mailpalette.ts to build the
+     palette a message body renders in. Handing that code a color-mix() would
+     silently degrade every message to the fallback palette, so the surface
+     tokens must stay plain, opaque colours. Chrome uses --glass-*; the mail
+     renderer keeps using --surface-*.
+
+     Every value here defaults to the corresponding surface token, so with no
+     wallpaper the chrome paints exactly the colour it always did.
+     --glass-list is the message list's own sheet (and its rows): it is separate
+     from --glass-raised, which is the chips and cards painted ON a pane, because
+     the two are no longer the same number once the list is the reader's to
+     tune - the sidebar is deliberately denser than the list, so a chip has to be
+     denser than that again (see theme/glass.ts). */
+  --glass-base: var(--surface-base);
+  --glass-list: var(--surface-raised);
+  --glass-raised: var(--surface-raised);
+  --glass-sunken: var(--surface-sunken);
+  --glass-overlay: var(--surface-overlay);
+  --glass-hover: var(--surface-hover);
+  --glass-selection: var(--selection-bg);
+  /* The status bar's own foreground. It exists as a token because the bar is the
+     one place whose text sits a tier lower than the rest (--text-tertiary), and
+     that tier has no headroom over a picture; see the wallpaper block below. */
+  --glass-status-fg: var(--text-tertiary);
+  /* The dim meta tier's foreground while glass is on. Same reason as the status
+     bar's, for the text that paints straight onto a sheet rather than onto a chip
+     of its own: the sidebar's group headings and account names, the list's time,
+     snippet and message count, and the detail header's address and date. Text on
+     an opaque chip (the search bar's hint, an attachment's size, a tech badge)
+     keeps --text-tertiary: no picture reaches it, so nothing there needs to
+     change. Defaults to the tier itself, so with no wallpaper the dim text paints
+     exactly the colour it always did. */
+  --glass-tertiary-fg: var(--text-tertiary);
+  /* The backdrop blur each tier of the ui uses. Literal values, not tokens:
+     Safari on macOS Sonoma (WebKit bug 297620) drops a backdrop-filter whose
+     value references a var(), which loses the whole effect rather than just the
+     radius. The chrome's own tiers keep their literal next to the rule that uses
+     it; the two radii the reader chooses (the reading pane's mask and the list's
+     sheet, with the sidebar following the list) are written as literals into one
+     injected stylesheet by theme/glass.ts, for the same reason. */
+
+  /* default density (medium) row + pane spacing. overridden per density below. */
+  --row-pad-y: 8px;
+  --row-pad-x: 12px;
+  --row-gap: 3px;
+  --list-line-height: 1.4;
+  --pane-pad: 16px;
+  --control-height: 30px;
+  --stack-gap: 10px;
+}
+
+/* light theme (default). */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --surface-base: #f6f6f7;
+  --surface-raised: #ffffff;
+  --surface-overlay: #ffffff;
+  --surface-sunken: #efeff1;
+  --surface-hover: #ececef;
+
+  --text-primary: #1a1b1e;
+  --text-secondary: #4a4d54;
+  --text-tertiary: #797d86;
+  --text-inverse: #ffffff;
+
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-default: rgba(0, 0, 0, 0.12);
+  --border-strong: rgba(0, 0, 0, 0.22);
+
+  --success: #1a7f4b;
+  --success-bg: color-mix(in srgb, #1a7f4b 12%, transparent);
+  --warning: #9a6700;
+  --warning-bg: color-mix(in srgb, #9a6700 14%, transparent);
+  --danger: #c0392b;
+  --danger-bg: color-mix(in srgb, #c0392b 12%, transparent);
+
+  /* the purple of the NIGHTLY badge in the nightly build's logo, so the marker
+     in the ui matches the icon on the dock/taskbar. darkened here to keep it
+     readable on a light surface. */
+  --nightly: #8b3cc0;
+  --nightly-bg: color-mix(in srgb, #b965e2 16%, transparent);
+
+  /* the dim behind a modal. */
+  --scrim: rgba(0, 0, 0, 0.4);
+}
+
+/* dark theme. every token has a dark value so the toggle never leaves a gap. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --surface-base: #111214;
+  --surface-raised: #1a1c1f;
+  --surface-overlay: #222428;
+  --surface-sunken: #161719;
+  --surface-hover: #25282d;
+
+  --text-primary: #ecedee;
+  --text-secondary: #b4b7bd;
+  --text-tertiary: #7e828b;
+  --text-inverse: #ffffff;
+
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.22);
+
+  /* lighten the link derivation so the accent reads on dark surfaces. */
+  --link: color-mix(in srgb, var(--accent) 72%, white);
+  --selection-bg: color-mix(in srgb, var(--accent) 22%, transparent);
+  --selection-bg-strong: color-mix(in srgb, var(--accent) 32%, transparent);
+
+  --success: #3fb27a;
+  --success-bg: color-mix(in srgb, #3fb27a 16%, transparent);
+  --warning: #d9a441;
+  --warning-bg: color-mix(in srgb, #d9a441 16%, transparent);
+  --danger: #e5675a;
+  --danger-bg: color-mix(in srgb, #e5675a 16%, transparent);
+
+  --nightly: #c98cea;
+  --nightly-bg: color-mix(in srgb, #b965e2 22%, transparent);
+
+  --scrim: rgba(0, 0, 0, 0.55);
+
+  --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* Wallpaper glass, dark themes only.
+   ---------------------------------------------------------------------------
+   With a wallpaper up, the window is the wallpaper and the chrome is glass over
+   it: every pane drops to a tinted translucent sheet so the image reads through
+   the whole interface instead of showing in one corner.
+
+   Only in a dark theme, and only while a wallpaper is actually showing, so the
+   three other combinations keep painting exactly what they painted before. The
+   tint is derived from each theme's own surface token with color-mix, so a warm
+   theme stays warm, a cool theme stays cool, and a user theme needs no change.
+
+   The percentages are not in this file. They are custom properties written on
+   the root element by theme/glass.ts, which derives the whole ladder from the
+   reader's two zoning sliders - one density for the message list, one for its
+   blur - and keeps the sidebar, the chrome bars and the overlay tiers in
+   proportion to it. Every var() carries the ladder this build ships as its
+   fallback, so a root element whose store never ran, or one written by an older
+   build, still paints a complete and readable glass set rather than a
+   half-resolved one.
+
+   Text is never made translucent, only the sheet behind it (see the note about
+   `opacity` in the components). */
+:root[data-theme='dark'][data-wallpaper='on'] {
+  --glass-list: color-mix(in srgb, var(--surface-raised) var(--glass-list-alpha, 50%), transparent);
+  --glass-base: color-mix(in srgb, var(--surface-base) var(--glass-base-alpha, 62%), transparent);
+  --glass-raised: color-mix(in srgb, var(--surface-raised) var(--glass-raised-alpha, 62%), transparent);
+  --glass-sunken: color-mix(in srgb, var(--surface-sunken) var(--glass-sunken-alpha, 68%), transparent);
+  --glass-overlay: color-mix(in srgb, var(--surface-overlay) var(--glass-overlay-alpha, 82%), transparent);
+  --glass-hover: color-mix(in srgb, var(--surface-hover) var(--glass-hover-alpha, 66%), transparent);
+  /* Selection keeps the reader's accent, but mixed INTO the sheet rather than
+     replacing it. The theme's --selection-bg is an accent wash over nothing, so
+     using it here would take the pane's sheet out from under the selected row:
+     measured on a white wallpaper, the subject falls to 3.2:1 while the rows
+     around it hold 6.5:1, and the row reads as a hole rather than a highlight.
+     Mixing the accent into the sheet keeps the legibility and the accent at
+     once - and because the sheet is named rather than restated, the no-blur
+     fallback below inherits a selection tint it does not have to spell out.
+     25% is measured, not chosen: at 14% the realistic case leaves the selected
+     row only 24 apart from a hovered one (indistinguishable), at 25% it is 56
+     with the worst-case contrast still at 6.0:1. It rides on --glass-raised,
+     which the ladder above keeps denser than the list sheet it is painted on. */
+  --glass-selection: color-mix(in srgb, var(--accent) 25%, var(--glass-raised));
+  /* The status bar's foreground. It is the one strip whose text sits a tier
+     below the rest (--text-tertiary), and that tier has no headroom over an
+     image at all: it measures 4.66:1 on the opaque surface, so anything showing
+     through the sheet drops it under 4.5:1 and no alpha short of fully opaque
+     brings it back. Over a picture the bar's text therefore moves up one tier,
+     which is a change of foreground rather than of sheet and costs no
+     translucency. Everywhere else it stays exactly the colour it was. */
+  --glass-status-fg: var(--text-secondary);
+}
+
+/* The dim meta tier while glass is on.
+   ---------------------------------------------------------------------------
+   This used to move only for the opaque set the brightness measurement chose,
+   because over a dark picture the tier measured 4.75:1 and keeping the reader's
+   hierarchy was free. The measurement is gone and the density is the reader's
+   now, so there is no set to move for: the lift is unconditional. It has to be:
+   #7e828b against pure white tops out at 3.85:1, so the tier cannot be made
+   readable over a bright sheet by any alpha, and at the sidebar's own density it
+   measures 2.4:1. Changing the foreground costs no translucency. */
+:root[data-theme='dark'][data-wallpaper='on'] {
+  --glass-tertiary-fg: var(--text-secondary);
+}
+
+/* Without backdrop-filter the glass becomes a plain wash, which on a bright
+   wallpaper leaves text sitting on whatever colour happens to be behind it.
+   Where the blur cannot be drawn, the sheets go almost opaque instead: the
+   wallpaper is then only a suggestion, which is the right trade when the
+   alternative is unreadable mail. The disjunction is required - a browser that
+   only implements the -webkit- form does not match the unprefixed query, and
+   silently claiming support would ship the unreadable case. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root[data-theme='dark'][data-wallpaper='on'] {
+    --glass-list: color-mix(in srgb, var(--surface-raised) 92%, transparent);
+    --glass-base: color-mix(in srgb, var(--surface-base) 92%, transparent);
+    --glass-raised: color-mix(in srgb, var(--surface-raised) 92%, transparent);
+    --glass-sunken: color-mix(in srgb, var(--surface-sunken) 92%, transparent);
+    --glass-overlay: color-mix(in srgb, var(--surface-overlay) 96%, transparent);
+    --glass-hover: color-mix(in srgb, var(--surface-hover) 92%, transparent);
+    /* no --glass-selection here: it is expressed in terms of --glass-raised, so
+       it follows the sheet above instead of restating it. With no blur the rows
+       have to be opaque enough to read on their own and the accent rides along.
+       The reader's own alphas are overridden rather than composed with: with no
+       blur to hide behind, a sheet at the density a slider can reach is not
+       enough to carry text over a picture, which is the whole reason this block
+       exists. */
+  }
+}
+
+/* Where color-mix() itself is unavailable none of the tints above can be
+   expressed, and the fallback above cannot save the window either, because it
+   is made of color-mix() too.
+   A custom property is not checked where it is declared, only where it is
+   substituted - so on such an engine `background: var(--glass-base)` resolves to
+   a value that engine cannot parse, dies at computed-value time, and drops to
+   the initial value: transparent. The panes lose their sheet entirely, the text
+   lands on the raw wallpaper and the blur is no help; over a white wallpaper
+   that measures 1.17:1 against the sidebar's own labels, against 2.0:1 with the
+   tint and 16.0:1 with this block.
+   Where the tints cannot be computed the sheets go back to the plain surface
+   tokens - the colours the window painted before glass existed, and readable on
+   any wallpaper. App.svelte and MessageDetail.svelte gate the two halves of the
+   hoist on the same query, so the image stays in the reading pane there instead
+   of being lifted to a floor that nothing can see through.
+   Every value in this block is a plain colour or a plain token on purpose: a
+   fallback that reaches back through a color-mix() - --selection-bg is one -
+   would be just as unparseable as the thing it is rescuing, and the selected row
+   would end up with no background at all. That is why selection becomes an
+   opaque surface here and MessageRow supplies the accent as a stripe instead.
+   This block must stay AFTER the backdrop-filter block above: an engine can lack
+   both features, both blocks then match, and the one that needs no color-mix()
+   has to be the one that wins.
+   The condition is written as a declaration on purpose. `@supports (color-mix(…))`
+   - a bare function - is not a valid condition in any engine and evaluates to
+   false, so the `not` form would be true EVERYWHERE: the guard would fire on
+   every browser and quietly replace the glass with opaque slabs. Verified in the
+   harness: the bare form is false, the declaration form is true.
+   `red` here is a probe for the parser, not a style: nothing in this block paints,
+   and the test value is never rendered. */
+@supports not (background-color: color-mix(in srgb, red 50%, transparent)) {
+  :root[data-theme='dark'][data-wallpaper='on'] {
+    --glass-list: var(--surface-raised);
+    --glass-base: var(--surface-base);
+    --glass-raised: var(--surface-raised);
+    --glass-sunken: var(--surface-sunken);
+    --glass-overlay: var(--surface-overlay);
+    --glass-hover: var(--surface-hover);
+    --glass-selection: var(--surface-overlay);
+    --glass-status-fg: var(--text-tertiary);
+    /* The sheets here are the plain surface again, so the dim tier goes back to
+       the tier itself: it reads 4.43:1 on an opaque sheet, which is what the
+       window painted before glass existed, and lifting it would lighten text that
+       has no picture behind it. */
+    --glass-tertiary-fg: var(--text-tertiary);
+  }
+}
+
+/* density variants. these swap only spacing and line-height tokens, so every
+   component stays density-agnostic. medium is the default already on :root. */
+:root[data-density="compact"] {
+  --row-pad-y: 5px;
+  --row-pad-x: 10px;
+  --row-gap: 2px;
+  --list-line-height: 1.3;
+  --pane-pad: 12px;
+  --control-height: 27px;
+  --stack-gap: 8px;
+}
+
+:root[data-density="medium"] {
+  --row-pad-y: 8px;
+  --row-pad-x: 12px;
+  --row-gap: 3px;
+  --list-line-height: 1.4;
+  --pane-pad: 16px;
+  --control-height: 30px;
+  --stack-gap: 10px;
+}
+
+:root[data-density="luxe"] {
+  --row-pad-y: 13px;
+  --row-pad-x: 16px;
+  --row-gap: 5px;
+  --list-line-height: 1.55;
+  --pane-pad: 22px;
+  --control-height: 34px;
+  --stack-gap: 14px;
+}
+
+/* corner style variants. these swap only the radius tokens, so every
+   component stays corner-agnostic. the default 5px values live on :root. */
+:root[data-corners="square"] {
+  --radius-control: 0;
+  --radius-card: 0;
+}
+
+:root[data-corners="round"] {
+  --radius-control: 10px;
+  --radius-card: 12px;
+}
+
+/* cursor variant. the default is the arrow on every platform, matching native
+   apps; this brings back the browser hand for anyone who prefers it. */
+:root[data-cursor="hand"] {
+  --cursor-action: pointer;
+}
+
+/* macos only, set by App.svelte: the window has no native title bar, so the ui
+   leaves room for the traffic lights at the top left. the lights are drawn by
+   the system at a fixed size, so both values are divided by the interface scale
+   to cancel out the css zoom applyScale puts on the root; without that they
+   would overshoot above 100% and slide under the lights below it. */
+:root[data-titlebar="mac"] {
+  --titlebar-lights: calc(28px / var(--ui-scale, 1));
+  --titlebar-inset: calc(78px / var(--ui-scale, 1));
+  --titlebar-nudge: calc(3px / var(--ui-scale, 1));
+}

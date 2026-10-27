@@ -1,0 +1,155 @@
+# Configuration for docs.pelton.app, built with Zensical.
+# Everything is self-hosted: fonts, icons, scripts. The built site makes no
+# external requests (GDPR: no visitor IPs leak to third parties). Keep it
+# that way: no Google Fonts (font = false below), no emoji shortcodes in
+# pages (they inline twemoji from a CDN), no math extension.
+
+[project]
+site_name = "Pelton Docs"
+site_description = "Documentation for Pelton, the privacy-focused email client."
+site_author = "Arne K."
+site_url = "https://docs.pelton.app/"
+repo_url = "https://github.com/peltonapp/Pelton"
+repo_name = "peltonapp/Pelton"
+edit_uri = "edit/main/docs/"
+
+copyright = """
+Copyright &copy; The Pelton Project &middot;
+<a href="https://pelton.app">pelton.app</a> &middot;
+<a href="https://pelton.app/imprint/en/">Imprint / Impressum</a> &middot;
+<a href="https://pelton.app/privacy/">Privacy / Datenschutz</a> &middot;
+<a href="/AGENTS.md">For AI Agents</a>
+"""
+
+nav = [
+  { "Home" = "index.md" },
+  { "Install" = [
+    { "Overview" = "install/index.md" },
+    { "Windows" = "install/windows.md" },
+    { "macOS" = "install/macos.md" },
+    { "Linux" = "install/linux.md" },
+    { "Build from source" = "install/build-from-source.md" },
+  ] },
+  { "Updating" = "updating.md" },
+  { "Setting up a mailbox" = [
+    { "Overview" = "mailbox/index.md" },
+    { "Gmail" = "mailbox/gmail.md" },
+    { "iCloud" = "mailbox/icloud.md" },
+    { "Outlook" = "mailbox/outlook.md" },
+    { "Generic IMAP/SMTP" = "mailbox/imap-smtp.md" },
+    { "Importing from Thunderbird" = "mailbox/thunderbird-import.md" },
+  ] },
+  { "Features" = [
+    { "Shortcuts" = "features/shortcuts.md" },
+    { "Command palette" = "features/command-palette.md" },
+    { "Search" = "features/search.md" },
+    { "Scanning links and attachments" = "features/virustotal.md" },
+    { "Encryption" = "features/encryption.md" },
+  ] },
+  { "Themes" = [
+    { "Overview" = "themes/index.md" },
+    { "Installing a theme" = "themes/install.md" },
+    { "Theme format" = "themes/format.md" },
+    { "Create a theme" = "themes/create.md" },
+  ] },
+  { "Contributing" = [
+    { "Overview" = "contributing/index.md" },
+    { "Contributing guidelines" = "contributing/guidelines.md" },
+    { "Code of Conduct" = "contributing/code-of-conduct.md" },
+    { "Developer Certificate of Origin" = "contributing/dco.md" },
+    { "Developing on Pelton" = "contributing/developing.md" },
+    { "Translating Pelton" = "contributing/translations.md" },
+  ] },
+  { "Help" = [
+    { "Support" = "support.md" },
+    { "Reporting an issue" = "reporting-an-issue.md" },
+  ] },
+  { "Reference" = [
+    { "Versioning" = "versioning.md" },
+    { "CLI flags" = "cli-flags.md" },
+    { "FAQ" = "faq.md" },
+  ] },
+]
+
+extra_css = ["stylesheets/pelton.css"]
+extra_javascript = [
+  { path = "javascripts/checklist.js", defer = true },
+  { path = "javascripts/platform-keys.js", defer = true },
+]
+
+[project.theme]
+# no Google Fonts: Familjen Grotesk and Spline Sans Mono are bundled in
+# assets/fonts and wired up in stylesheets/pelton.css.
+font = false
+# overrides/.icons holds vendored tabler icons (same set the app uses), so
+# neither lucide nor fontawesome (with its license comment) ends up in pages.
+custom_dir = "overrides"
+logo = "assets/pelton-logo.webp"
+favicon = "assets/favicon.png"
+language = "en"
+
+features = [
+  "content.action.edit",
+  "content.code.annotate",
+  "content.code.copy",
+  "content.tabs.link",
+  "content.tooltips",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+  "toc.follow",
+]
+
+[project.theme.icon]
+repo = "tabler/brand-github"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+toggle.icon = "tabler/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+toggle.icon = "tabler/moon"
+toggle.name = "Switch to light mode"
+
+[[project.extra.social]]
+icon = "tabler/brand-github"
+link = "https://github.com/peltonapp/Pelton"
+
+[[project.extra.social]]
+icon = "tabler/brand-discord"
+link = "https://pelton.app/discord"
+
+[[project.extra.social]]
+icon = "tabler/world"
+link = "https://pelton.app"
+
+[project.markdown_extensions.admonition]
+[project.markdown_extensions.attr_list]
+[project.markdown_extensions.def_list]
+[project.markdown_extensions.footnotes]
+[project.markdown_extensions.md_in_html]
+[project.markdown_extensions.tables]
+[project.markdown_extensions.toc]
+permalink = true
+[project.markdown_extensions.pymdownx.betterem]
+[project.markdown_extensions.pymdownx.details]
+[project.markdown_extensions.pymdownx.highlight]
+anchor_linenums = true
+line_spans = "__span"
+pygments_lang_class = true
+[project.markdown_extensions.pymdownx.inlinehilite]
+[project.markdown_extensions.pymdownx.keys]
+[project.markdown_extensions.pymdownx.superfences]
+[project.markdown_extensions.pymdownx.tabbed]
+alternate_style = true
+combine_header_slug = true
+[project.markdown_extensions.pymdownx.tasklist]
+custom_checkbox = true

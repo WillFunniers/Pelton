@@ -1,0 +1,667 @@
+<script lang="ts">
+  // the bottom status line. the left side surfaces the durable send queue: a
+  // clickable "N sending" that opens the outbox panel, plus a failed count. the
+  // right side shows live sync state and the last-synced relative time. it is the
+  // honest, always-visible window into background activity.
+  import { onDestroy, onMount } from 'svelte'
+  import { IconAlertTriangle, IconBatteryEco, IconBug, IconCheck, IconClock, IconDownload, IconMail, IconRefresh, IconSend, IconWifiOff, IconX } from '@tabler/icons-svelte'
+  import { outbox, syncing, lastSynced, syncFolder, syncServer, syncAccount, syncCounts } from '../../stores/outbox'
+  import { online } from '../../stores/network'
+  import { failedSyncs, showSyncFailure } from '../../stores/syncfailures'
+  import { downloadProgress, attachmentProgress } from '../../stores/progress'
+  import { formatRelative, formatStatusClock, type TimeFormat } from '../../lib/format'
+  import { sidebar } from '../../stores/accounts'
+  import { selectView } from '../../stores/selection'
+  import { cancelDownload, isDevMode, isNightly } from '../../lib/api'
+  import { isScheduledRow } from '../../lib/scheduled'
+  import ProfileChip from './ProfileChip.svelte'
+  import AgentProposals from './AgentProposals.svelte'
+  import { profiles, currentProfile } from '../../stores/profiles'
+  import { prefs, setLowPowerMode } from '../../stores/prefs'
+  import OutboxPanel from './OutboxPanel.svelte'
+  import ScheduledPanel from './ScheduledPanel.svelte'
+  import { devToolsAvailable } from '../../stores/devoverlays'
+  import { t } from '../../lib/i18n'
+
+  // devMode is read once at startup: it's fixed for the lifetime of the
+  // process (set by the PELTON_DEV env var a dev run launches with), not
+  // something that can change while the app is open.
+  let devMode = false
+  // nightly is fixed at build time, so it is read once alongside devMode. it
+  // stays on screen for the whole session: the launch dialog is dismissed, this
+  // is the reminder that outlives it.
+  let nightly = false
+  onMount(async () => {
+    devMode = await isDevMode().catch(() => false)
+    nightly = await isNightly().catch(() => false)
+  })
+
+  // format an eta in seconds as m:ss (or just seconds under a minute).
+  function formatEta(sec: number): string {
+    if (sec <= 0) {
+      return ''
+    }
+    if (sec < 60) {
+      return `${sec}s`
+    }
+    const m = Math.floor(sec / 60)
+    const s = sec % 60
+    return `${m}:${String(s).padStart(2, '0')}`
+  }
+
+  // attachment percent from bytes, guarding a zero total.
+  $: attPercent =
+    $attachmentProgress && $attachmentProgress.bytesTotal > 0
+      ? Math.round(($attachmentProgress.bytesDone / $attachmentProgress.bytesTotal) * 100)
+      : 0
+
+  // the sync line. Verbose names the mailbox, and the account and server behind
+  // it, which is the difference between two identical "Syncing INBOX" lines and
+  // knowing which mailbox is the slow one.
+  $: syncLabel = buildSyncLabel($prefs.verboseSync, $syncFolder, $syncAccount, $syncServer)
+
+  function buildSyncLabel(verbose: boolean, folder: string, account: string, server: string): string {
+    if (!verbose || folder === '') {
+      return $t('common.statusBar.syncing')
+    }
+    if (account !== '' && server !== '') {
+      return $t('common.statusBar.syncingMailboxFull')
+        .replace('{mailbox}', folder)
+        .replace('{account}', account)
+        .replace('{server}', server)
+    }
+    if (server !== '') {
+      return $t('common.statusBar.syncingMailboxOn').replace('{mailbox}', folder).replace('{server}', server)
+    }
+    return $t('common.statusBar.syncingMailbox').replace('{mailbox}', folder)
+  }
+
+  // a total of 0 means no folder has been reconciled yet, so there is nothing
+  // honest to draw a proportion from and the bar sweeps instead.
+  $: determinate = $syncCounts.total > 0
+  $: percent = determinate ? Math.min(100, Math.round(($syncCounts.done / $syncCounts.total) * 100)) : 0
+
+  let panelOpen = false
+  // the scheduled-send list, a second popover from the same corner. It is its
+  // own surface because a scheduled send is a decision still open rather than
+  // something already on its way, which is what the outbox shows.
+  let scheduledOpen = false
+  // the Developer menu hanging off the DEV badge. Never persisted: the overlays
+  // are scratch tools and every launch starts with the menu shut.
+  let devMenuOpen = false
+
+  $: pending = $outbox.filter((r) => r.state === 'queued' || r.state === 'sending')
+  $: failed = $outbox.filter((r) => r.state === 'failed')
+  $: scheduled = $outbox.filter(isScheduledRow)
+
+  // re-render the relative time on a slow tick so "2m ago" stays current. the
+  // tick variable is referenced in the reactive label so it recomputes.
+  let tick = Date.now()
+  const timer = setInterval(() => (tick = Date.now()), 30000)
+  onDestroy(() => clearInterval(timer))
+  // one mailbox is named; more than one is counted, since the names would not
+  // fit and the dialog lists them anyway.
+  $: failedLabel =
+    $failedSyncs.length === 1
+      ? $t('common.statusBar.syncFailedOne').replace('{mailbox}', $failedSyncs[0].email)
+      : $t('common.statusBar.syncFailedMany').replace('{n}', String($failedSyncs.length))
+
+  // the clock and the unread count (#488). The clock ticks on the minute rather
+  // than every thirty seconds, so it never lags the system clock by half a
+  // minute.
+  let now = new Date()
+  let clockTimer: ReturnType<typeof setTimeout> | null = null
+  function scheduleClock(): void {
+    now = new Date()
+    clockTimer = setTimeout(scheduleClock, 60000 - (now.getSeconds() * 1000 + now.getMilliseconds()))
+  }
+  scheduleClock()
+  onDestroy(() => {
+    if (clockTimer) clearTimeout(clockTimer)
+  })
+  $: clock = formatStatusClock(now, $prefs.timeFormat as TimeFormat)
+  $: clockTitle = now.toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'short' })
+
+  // the unified inbox's unread count, the same number its sidebar badge shows.
+  $: inboxUnread = $sidebar.data?.views.find((v) => v.key === 'inbox')?.unreadCount ?? 0
+  $: unreadLabel = $t('common.statusBar.unread').replace('{n}', inboxUnread.toLocaleString())
+
+  function openInbox(): void {
+    selectView('inbox', $t('sidebar.unifiedInbox'))
+  }
+
+  $: syncedLabel = $lastSynced ? relativeAt($lastSynced, tick, $t) : ''
+  function relativeAt(ts: number, _tick: number, translate: (key: string) => string): string {
+    return formatRelative(ts, translate)
+  }
+</script>
+
+<footer class="statusbar">
+  <div class="left">
+    {#if nightly}
+      <span class="dev-badge nightly-badge" title={$t('common.statusBar.nightlyTitle')}>
+        <IconAlertTriangle size={13} stroke={1.8} />
+        {$t('common.statusBar.nightly')}
+      </span>
+    {/if}
+    <!-- the badge is a button whenever the overlays are available, since it is
+         the only thing on screen that says they exist (#188). A PELTON_DEVTOOLS
+         run has the overlays without the separate data directory, so it gets the
+         badge too, with a title that says which of the two it means. -->
+    {#if devMode || $devToolsAvailable}
+      <div class="dev-wrap">
+        {#if $devToolsAvailable}
+          <button
+            type="button"
+            class="dev-badge clickable"
+            aria-expanded={devMenuOpen}
+            title={devMode ? $t('common.statusBar.devModeTitle') : $t('common.statusBar.devToolsTitle')}
+            on:click={() => (devMenuOpen = !devMenuOpen)}
+          >
+            <IconBug size={13} stroke={1.8} />
+            {$t('common.statusBar.devMode')}
+          </button>
+        {:else}
+          <span class="dev-badge" title={$t('common.statusBar.devModeTitle')}>
+            <IconBug size={13} stroke={1.8} />
+            {$t('common.statusBar.devMode')}
+          </span>
+        {/if}
+
+        {#if devMenuOpen}
+          <div class="popover dev-popover">
+            {#await import('../dev/DevMenu.svelte') then m}
+              <svelte:component this={m.default} on:close={() => (devMenuOpen = false)} />
+            {/await}
+          </div>
+        {/if}
+      </div>
+    {/if}
+    <!-- which profile you are writing from. Only once there is more than one:
+         an install with a single profile has no question to answer. -->
+    {#if $profiles.length > 1 && $currentProfile}
+      <AgentProposals />
+      <ProfileChip />
+    {/if}
+    {#if $prefs.statusUnread && inboxUnread > 0}
+      <button type="button" class="outbox-btn unread" title={$t('common.statusBar.unreadTitle')} on:click={openInbox}>
+        <IconMail size={13} stroke={1.7} />
+        <span>{unreadLabel}</span>
+      </button>
+    {/if}
+    {#if pending.length > 0 || failed.length > 0}
+      <button type="button" class="outbox-btn" class:has-failed={failed.length > 0} on:click={() => (panelOpen = !panelOpen)}>
+        {#if pending.length > 0}
+          <IconSend size={13} stroke={1.7} />
+          <span>{pending.length} {$t('common.outbox.sendingSuffix')}</span>
+        {/if}
+        {#if failed.length > 0}
+          <IconAlertTriangle size={13} stroke={1.7} class="fail-icon" />
+          <span class="fail">{failed.length} {$t('common.outbox.failedSuffix')}</span>
+        {/if}
+      </button>
+    {/if}
+
+    <!-- a scheduled send is not on its way yet, so it gets its own entry rather
+         than being counted among the messages being sent. -->
+    {#if scheduled.length > 0}
+      <button type="button" class="outbox-btn" on:click={() => (scheduledOpen = !scheduledOpen)}>
+        <IconClock size={13} stroke={1.7} />
+        <span>{scheduled.length} {$t('common.outbox.scheduledSuffix')}</span>
+      </button>
+    {/if}
+
+    {#if panelOpen}
+      <div class="popover">
+        <OutboxPanel on:close={() => (panelOpen = false)} />
+      </div>
+    {/if}
+
+    {#if scheduledOpen}
+      <div class="popover">
+        <ScheduledPanel on:close={() => (scheduledOpen = false)} />
+      </div>
+    {/if}
+  </div>
+
+  <div class="center">
+    {#if $downloadProgress}
+      <div class="progress" title={$downloadProgress.label}>
+        <IconDownload size={12} stroke={1.7} />
+        <span class="p-label">
+          {#if $downloadProgress.error}
+            {$t('common.statusBar.downloadFailed')}
+          {:else if $downloadProgress.total > 0}
+            {$downloadProgress.done}/{$downloadProgress.total}
+          {:else}
+            {$downloadProgress.label || $t('common.statusBar.downloading')}
+          {/if}
+        </span>
+        {#if $downloadProgress.total > 0 && !$downloadProgress.error}
+          <span class="bar"><span class="fill" style={`width:${$downloadProgress.percent}%`}></span></span>
+          <span class="p-num">{$downloadProgress.percent}%</span>
+          {#if $downloadProgress.etaSeconds > 0}
+            <span class="p-eta">~{formatEta($downloadProgress.etaSeconds)}</span>
+          {/if}
+        {/if}
+        {#if $downloadProgress.running}
+          <button
+            type="button"
+            class="cancel-dl"
+            aria-label={$t('common.statusBar.cancelDownload')}
+            title={$t('common.statusBar.cancelDownload')}
+            on:click={() => cancelDownload()}
+          >
+            <IconX size={12} stroke={2} />
+          </button>
+        {/if}
+      </div>
+    {:else if $attachmentProgress}
+      <div class="progress">
+        <IconDownload size={12} stroke={1.7} />
+        <span class="p-label">
+          {#if $attachmentProgress.filesTotal > 1}
+            {$t('common.statusBar.saving')} {$attachmentProgress.filesDone + 1}/{$attachmentProgress.filesTotal}
+          {:else}
+            {$t('common.statusBar.saving')}
+          {/if}
+        </span>
+        <span class="bar"><span class="fill" style={`width:${attPercent}%`}></span></span>
+      </div>
+    {/if}
+  </div>
+
+  <div class="right">
+    {#if !$online}
+      <span class="offline" title={$t('common.network.offlineTitle')}>
+        <IconWifiOff size={13} stroke={1.7} />
+        {$t('common.network.offline')}
+      </span>
+    {/if}
+    {#if $prefs.lowPowerMode}
+      <button
+        type="button"
+        class="low-power"
+        title={$t('common.statusBar.lowPowerTitle')}
+        on:click={() => setLowPowerMode(false)}
+      >
+        <IconBatteryEco size={13} stroke={1.7} />
+        {$t('common.statusBar.lowPower')}
+      </button>
+    {/if}
+    {#if $syncing}
+      <span class="sync syncing">
+        <IconRefresh size={13} stroke={1.7} class="spin" />
+        <span class="sync-text">{syncLabel}</span>
+        {#if $prefs.syncProgressBar}
+          <!-- the bar sits after the text at a fixed width, so a label that
+               grows from "Syncing" to a mailbox name and a count does not shove
+               it sideways while you are watching it. -->
+          <span
+            class="bar"
+            class:indeterminate={!determinate}
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={determinate ? $syncCounts.total : undefined}
+            aria-valuenow={determinate ? $syncCounts.done : undefined}
+            aria-label={$t('common.statusBar.syncProgress')}
+          >
+            <span class="bar-fill" style={determinate ? `width:${percent}%` : ''}></span>
+          </span>
+          {#if determinate}
+            <span class="counts">{$syncCounts.done.toLocaleString()} / {$syncCounts.total.toLocaleString()}</span>
+          {/if}
+        {/if}
+      </span>
+    {:else if $failedSyncs.length > 0}
+      <!-- a run that failed one mailbox out of several used to report a clean
+           sync, which is how a mailbox goes quiet for weeks without anyone
+           noticing (#322). -->
+      <button type="button" class="sync sync-failed" on:click={() => showSyncFailure($failedSyncs[0])}>
+        <IconAlertTriangle size={13} stroke={1.8} />
+        {failedLabel}
+      </button>
+    {:else if $lastSynced}
+      <span class="sync">
+        <IconCheck size={13} stroke={1.7} />
+        {$t('common.statusBar.synced')} {syncedLabel}
+      </span>
+    {/if}
+    {#if $prefs.statusClock}
+      <time class="clock" datetime={now.toISOString()} title={clockTitle}>{clock}</time>
+    {/if}
+  </div>
+</footer>
+
+{#if panelOpen || scheduledOpen}
+  <!-- click-away closes the popover. -->
+  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+  <div
+    class="scrim"
+    on:click={() => {
+      panelOpen = false
+      scheduledOpen = false
+    }}
+  ></div>
+{/if}
+
+{#if devMenuOpen}
+  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+  <div class="scrim" on:click={() => (devMenuOpen = false)}></div>
+{/if}
+
+<style>
+  /* Glass while a wallpaper is up. The tint and blur sit on a ::before because
+     this bar opens popovers with position:fixed, which a backdrop-filter on the
+     element itself would re-anchor to the bar. isolation:isolate scopes the
+     pseudo's z-index:-1 here.
+
+     isolation:isolate also makes this bar a stacking context, and that traps the
+     popover inside it: the popover's own z-index then only counts in here, while
+     the click-away scrim is a sibling of this bar in the root context and so
+     paints over the whole subtree. Every control in the popover stayed visible
+     but unclickable, because a real click landed on the scrim and closed the
+     panel instead. The z-index below lifts the entire bar - and the popover with
+     it - above the scrim's 80. It stays well under the 300 band the app's
+     dialogs start at, so a dialog still covers the bar. Do not remove it without
+     re-checking that the popover's controls are still reachable by mouse. */
+  .statusbar {
+    position: relative;
+    isolation: isolate;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    height: 26px;
+    padding: 0 var(--space-4);
+    border-top: var(--hairline) solid var(--border-subtle);
+    font-size: var(--fz-meta);
+    /* glass-aware: over a picture the bar's text moves up a tier, because
+       --text-tertiary has no headroom there (see tokens.css) */
+    color: var(--glass-status-fg);
+  }
+
+  .statusbar::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: var(--glass-sunken);
+  }
+
+  :global(:root[data-wallpaper='on']) .statusbar::before {
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+
+  .left,
+  .right {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex: 1;
+    min-width: 0;
+  }
+  .right {
+    justify-content: flex-end;
+  }
+
+  .center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .progress {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .bar {
+    width: 120px;
+    height: 5px;
+    border-radius: 999px;
+    background: var(--glass-hover);
+    overflow: hidden;
+  }
+  .fill {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+    border-radius: 999px;
+    transition: width 0.2s ease;
+  }
+  .p-num {
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+  }
+  .p-eta {
+    color: var(--glass-status-fg);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .cancel-dl {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--glass-status-fg);
+    cursor: var(--cursor-action);
+    padding: 1px;
+    border-radius: var(--radius-control);
+  }
+  .cancel-dl:hover {
+    background: var(--glass-hover);
+    color: var(--danger);
+  }
+
+  .outbox-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: var(--fz-meta);
+    cursor: var(--cursor-action);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-control);
+  }
+
+  .outbox-btn:hover {
+    background: var(--glass-hover);
+    color: var(--text-primary);
+  }
+
+  .outbox-btn.unread {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .clock {
+    flex-shrink: 0;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+  }
+
+  .outbox-btn .fail {
+    color: var(--danger);
+  }
+
+  .outbox-btn :global(.fail-icon) {
+    color: var(--danger);
+  }
+
+  .popover {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    inset-inline-start: var(--space-3);
+    z-index: 90;
+  }
+
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+  }
+
+  .offline {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--danger, var(--text-secondary));
+    font-weight: var(--fw-semibold);
+  }
+
+  .low-power {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    border: none;
+    background: transparent;
+    color: var(--warning, var(--text-secondary));
+    font-size: var(--fz-meta);
+    cursor: var(--cursor-action);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-control);
+  }
+
+  .dev-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-control);
+    background: var(--danger-bg, var(--warning-bg, var(--surface-sunken)));
+    color: var(--danger, var(--warning));
+    font-size: var(--fz-meta);
+    font-weight: var(--fw-semibold);
+    letter-spacing: 0.02em;
+    /* the button form has to look identical to the span form. */
+    border: none;
+    font-family: inherit;
+  }
+
+  .dev-badge.clickable {
+    cursor: var(--cursor-action);
+  }
+  .dev-badge.clickable:hover {
+    filter: brightness(1.15);
+  }
+
+  /* the badge sits in the middle of the row, so its menu is positioned against
+     the badge rather than against the bar's left edge like the outbox panel. */
+  .dev-wrap {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .dev-popover {
+    left: 0;
+  }
+
+  /* the nightly marker takes the badge shape but the purple of the nightly
+     logo, so it reads as a build channel rather than as an error. */
+  .nightly-badge {
+    background: var(--nightly-bg);
+    color: var(--nightly);
+  }
+
+  .low-power:hover {
+    background: var(--glass-hover);
+  }
+
+  .sync {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .sync.syncing {
+    color: var(--text-secondary);
+  }
+
+  .sync-failed {
+    padding: 0;
+    font: inherit;
+    color: var(--danger);
+    background: transparent;
+    border: none;
+    cursor: var(--cursor-action);
+  }
+  .sync-failed:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  /* the label is the only part allowed to change width; the bar and the count
+     keep their own space so nothing shifts as a sync runs. */
+  .sync-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 46ch;
+  }
+
+  .bar {
+    position: relative;
+    flex-shrink: 0;
+    width: 90px;
+    height: 4px;
+    overflow: hidden;
+    border-radius: var(--radius-control);
+    background: var(--glass-sunken);
+  }
+
+  .bar-fill {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: inherit;
+    background: var(--accent);
+    transition: width 200ms linear;
+  }
+
+  /* nothing to be proportional about yet, so it sweeps rather than sitting at
+     zero and looking stuck. */
+  .bar.indeterminate .bar-fill {
+    width: 40%;
+    animation: sweep 1.1s ease-in-out infinite;
+  }
+
+  @keyframes sweep {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(250%);
+    }
+  }
+
+  .counts {
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+    color: var(--glass-status-fg);
+  }
+
+  .sync :global(.spin) {
+    /* svg transform-origin defaults differ across the webviews wails embeds
+       per platform (webkit vs webview2); pin it explicitly so the icon spins
+       in place instead of wobbling around an off-center pivot on some os. */
+    transform-box: border-box;
+    transform-origin: 50% 50%;
+    animation: statusspin 0.8s linear infinite;
+  }
+
+  @keyframes statusspin {
+    to {
+      transform: rotate(-360deg);
+    }
+  }
+</style>

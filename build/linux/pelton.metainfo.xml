@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AppStream MetaInfo for Pelton. Shipped to /usr/share/metainfo so GNOME
+  Software / KDE Discover recognise the installed app as a first-class
+  component: without it the graphical stores can install the .rpm but never
+  link the desktop entry to its owning package, so they show no "Remove"
+  button (the CLI `dnf remove pelton` still works, but users installing by
+  double-clicking the .rpm had no way to uninstall). The <launchable>
+  desktop-id must match the installed pelton.desktop for that link to work.
+-->
+<component type="desktop-application">
+  <id>sh.arne.Pelton</id>
+  <launchable type="desktop-id">pelton.desktop</launchable>
+
+  <name>Pelton</name>
+  <summary>Open-source desktop email client</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <developer id="sh.arne">
+    <name>Arne K. and the Pelton contributors</name>
+  </developer>
+
+  <description>
+    <p>
+      Pelton is an open-source, cross-platform desktop email client built with
+      Wails, Svelte and Go. It focuses on privacy: remote images and tracking
+      pixels are blocked by default, and the interface stays fast and native.
+    </p>
+  </description>
+
+  <categories>
+    <category>Network</category>
+    <category>Email</category>
+    <category>Office</category>
+  </categories>
+
+  <keywords>
+    <keyword>email</keyword>
+    <keyword>mail</keyword>
+    <keyword>imap</keyword>
+    <keyword>smtp</keyword>
+    <keyword>inbox</keyword>
+  </keywords>
+
+  <url type="homepage">https://pelton.app</url>
+  <url type="bugtracker">https://github.com/peltonapp/Pelton/issues</url>
+  <url type="help">https://docs.pelton.app</url>
+  <url type="vcs-browser">https://github.com/peltonapp/Pelton</url>
+
+  <content_rating type="oars-1.1" />
+
+  <!--
+    Flathub requires at least one screenshot and re-hosts what it finds here,
+    so these point at the default branch rather than a tag: a tagged url would
+    have to be bumped in lockstep with every release or the listing would show
+    the images of whichever version was submitted.
+  -->
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/peltonapp/Pelton/main/docs/assets/screenshots/screenshot-inbox-dark.png</image>
+      <caption>The unified inbox with a message open in the reading pane</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/peltonapp/Pelton/main/docs/assets/screenshots/screenshot-inbox-light.png</image>
+      <caption>Light mode, with every account's mailboxes and saved views</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/peltonapp/Pelton/main/docs/assets/screenshots/screenshot-message-actions.png</image>
+      <caption>Reply, colour tags, snooze and move from the message menu</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/peltonapp/Pelton/main/docs/assets/screenshots/screenshot-compose.png</image>
+      <caption>Composing in markdown, with send later</caption>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="2026.4" date="2026-08-27" />
+  </releases>
+</component>

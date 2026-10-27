@@ -1,0 +1,128 @@
+/*
+  global base styles. all values come from tokens.css; this file only wires the
+  reset and base element styling to those tokens. no literal colors live here.
+*/
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background-color: var(--surface-base);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--fz-body);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /* desktop app: never select chrome text or rubber-band scroll the window. the
+     -webkit- prefix is required: the macos webview (wkwebview) ignores the
+     unprefixed property, which is why selection leaked everywhere before. */
+  -webkit-user-select: none;
+  user-select: none;
+  overflow: hidden;
+}
+
+/* percentages, not 100vh/100vw: viewport units misresolve on WebKitGTK (the
+   interface came up smaller than the window on Linux, with dead space along
+   the right and bottom), and unlike percentages they are not compensated for
+   the root css zoom the interface-scale setting applies. the percent chain
+   runs html -> body -> #app -> .shell. */
+#app {
+  height: 100%;
+  width: 100%;
+}
+
+code,
+pre,
+.mono {
+  font-family: var(--font-mono);
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--text-primary);
+  /* form fields are the one place text selection should work. */
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* a single, consistent focus ring for keyboard users, using the accent. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: var(--radius-control);
+}
+
+/* scrollbars are the platform's own, not painted here: macOS fades its overlay
+   bars out when idle, Windows and Linux draw theirs. a 10px bar of our own
+   design, always visible, is a web page's scrollbar rather than a desktop
+   app's. light and dark come from color-scheme on the theme, already set.
+
+   the one thing asked of them is a narrower width. macOS falls back to the wide
+   legacy scrollbar whenever a mouse is connected, whatever the "show scroll
+   bars" setting says, and that is wide enough to crowd the message list.
+   scrollbar-width leaves the system's own colors and behaviour alone, unlike
+   scrollbar-color, which would opt the scroller out of native rendering
+   entirely. it does not inherit, hence the universal selector. */
+* {
+  scrollbar-width: thin;
+}
+
+/* allow real text selection inside rendered mail bodies and editors. */
+.selectable,
+.selectable * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* reduce motion: freeze animations and transitions when the user asked for it,
+   either through the in-app setting (data-reduce-motion on the root) or the
+   os-level preference. near-zero durations instead of `none` so animation and
+   transition end events still fire and js waiting on them never hangs. */
+:root[data-reduce-motion] *,
+:root[data-reduce-motion] *::before,
+:root[data-reduce-motion] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

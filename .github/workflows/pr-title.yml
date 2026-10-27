@@ -1,0 +1,40 @@
+name: Validate PR title
+
+# This lived at .github/conventional-prs.yml, outside the workflows directory,
+# so GitHub never registered it and it has never run. The labelling half of it
+# moved to label-pr.yml; what is left is the title check itself.
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # the conventional types, plus i18n, which this repo already uses for
+          # translation-only changes.
+          types: |
+            feat
+            fix
+            perf
+            docs
+            refactor
+            chore
+            ci
+            build
+            test
+            style
+            i18n

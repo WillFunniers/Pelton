@@ -1,0 +1,177 @@
+name: Draft release changelog
+
+# Pushing a version tag (vX.Y.Z) builds a flat, alphabetically-sorted
+# changelog from merged PRs since the previous tag and opens (or updates) a
+# *draft* GitHub Release with it. Nothing is published automatically - review
+# the draft, edit if needed, and hit "Publish release" yourself. Publishing is
+# what fires release.yml's build/upload jobs (it only reacts to
+# `release: published`).
+#
+# This is a separate, independent mechanism from .github/release.yml, which
+# only configures GitHub's own "Generate release notes" button/API - it is
+# not read by this workflow.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to (re)generate a draft release for, e.g. v1.0.2"
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine previous tag
+        id: prev
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
+        run: |
+          CURRENT="${DISPATCH_TAG:-${GITHUB_REF#refs/tags/}}"
+          PREVIOUS=$(git tag --sort=-v:refname | grep -vF "$CURRENT" | head -n1)
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "previous=$PREVIOUS" >> "$GITHUB_OUTPUT"
+
+      - name: Build changelog and draft release
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          CURRENT_TAG: ${{ steps.prev.outputs.current }}
+          PREVIOUS_TAG: ${{ steps.prev.outputs.previous }}
+        with:
+          script: |
+            const { CURRENT_TAG, PREVIOUS_TAG } = process.env;
+            const { owner, repo } = context.repo;
+
+            const EXCLUDE_LABELS = new Set(["documentation", "no-changelog"]);
+
+            // Find every PR merged between the previous tag and this one. Look
+            // up each commit's associated PR via the API instead of parsing
+            // commit messages, so this works for merge commits, squash merges,
+            // and rebase merges alike.
+            let prNumbers = new Set();
+            if (PREVIOUS_TAG) {
+              const { data: cmp } = await github.rest.repos.compareCommitsWithBasehead({
+                owner, repo, basehead: `${PREVIOUS_TAG}...${CURRENT_TAG}`,
+              });
+              for (const commit of cmp.commits) {
+                const { data: associated } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                  owner, repo, commit_sha: commit.sha,
+                });
+                for (const pr of associated) {
+                  if (pr.merged_at) prNumbers.add(pr.number);
+                }
+              }
+            }
+
+            const prs = [];
+            for (const number of prNumbers) {
+              const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+              if (!pr.merged_at) continue;
+              prs.push(pr);
+            }
+            // Alphabetical by title, not merge order: PR titles carry their
+            // conventional-commit type as a prefix (feat:, fix:, ...), so
+            // this naturally groups by type too (feat: sorts before fix:)
+            // without needing separate category sections.
+            prs.sort((a, b) => a.title.localeCompare(b.title));
+
+            // One line per pull request. Embedding the full bodies was both
+            // unreadable at release size and over the API's 125000-character
+            // body limit, which is a hard failure: 2026.4's 69 pull requests
+            // came to 214238 characters of body text, much of it bot-written
+            // sections restating the diff. The titles carry the change; anyone
+            // who wants the detail follows the number.
+            const BODY_LIMIT = 125000;
+
+            // clip cuts at the last line break before the limit, so the body is
+            // never truncated mid-line.
+            function clip(text, max) {
+              if (text.length <= max) return text;
+              const cut = text.slice(0, max);
+              const lastBreak = cut.lastIndexOf("\n");
+              return `${(lastBreak > max / 2 ? cut.slice(0, lastBreak) : cut).trimEnd()}\n\n_(shortened)_`;
+            }
+
+            const entries = [];
+            for (const pr of prs) {
+              const labels = pr.labels.map((l) => l.name);
+              if (labels.some((l) => EXCLUDE_LABELS.has(l))) continue;
+
+              // plain "@user" and "#123" so GitHub's own autolinking resolves
+              // them, rather than wrapping them in an explicit markdown link
+              // (GitHub's autolinker fights explicit links on this exact text
+              // and mangles the href).
+              const avatar = `<img src="${pr.user.avatar_url}&s=32" width="16" height="16" valign="middle" style="border-radius:50%;">`;
+              entries.push(`- **${pr.title}** - ${avatar} @${pr.user.login} in #${pr.number}`);
+            }
+
+            // assemble is called twice: once with the per-pull-request bodies
+            // and, only if that is still too long, once with a single line each.
+            // A release with too much to say loses the detail rather than
+            // failing to publish at all.
+            function assemble(entries) {
+              const parts = [];
+              if (entries.length > 0) {
+                parts.push(`## Changes\n\n${entries.join("\n")}`);
+              }
+              if (PREVIOUS_TAG) {
+                parts.push(`**Full Changelog**: https://github.com/${owner}/${repo}/compare/${PREVIOUS_TAG}...${CURRENT_TAG}`);
+              }
+              return parts;
+            }
+
+            // downloads straight from this page skip the confirmation on
+            // pelton.app, so the disclaimer has to be on the release itself.
+            // It is never dropped, whichever way the changelog is shortened.
+            const disclaimer = [
+              "---",
+              "",
+              "Pelton is free software under the GPL-3.0, provided without warranty and used at your own risk. It connects to your real mailboxes, deletions can be permanent, and Pelton is not a backup tool. Keep your own backup of anything you cannot afford to lose.",
+              "",
+              `Warranty and liability: [DISCLAIMER.md](https://github.com/${owner}/${repo}/blob/main/DISCLAIMER.md) - [pelton.app/terms](https://pelton.app/terms)`,
+            ].join("\n");
+
+            let body = assemble(entries).concat(disclaimer).join("\n\n");
+            // one line each is short, but a release is never blocked on length.
+            if (body.length > BODY_LIMIT) {
+              core.warning(`changelog came to ${body.length} characters: truncating`);
+              body = `${clip(body, BODY_LIMIT - disclaimer.length - 200)}\n\n${disclaimer}`;
+            }
+
+            // getReleaseByTag only ever finds published releases, never
+            // drafts, so a re-run would create a new duplicate draft each
+            // time instead of updating the one from the last run. List and
+            // match by tag_name instead, which sees drafts too.
+            const releases = await github.paginate(github.rest.repos.listReleases, { owner, repo });
+            const existing = releases.find((r) => r.tag_name === CURRENT_TAG) || null;
+
+            if (existing) {
+              // tag_name and name are resent even though only the body changed.
+              // Updating a draft without them drops the draft's tag, leaving it
+              // as "untagged-<hash>", and then `gh release upload <tag>` cannot
+              // find it: that is how the 2026.4 linux assets failed to upload
+              // with "release not found" while macos and windows, which ran
+              // before the changelog step, succeeded.
+              await github.rest.repos.updateRelease({
+                owner,
+                repo,
+                release_id: existing.id,
+                tag_name: CURRENT_TAG,
+                name: existing.name || CURRENT_TAG,
+                body,
+              });
+            } else {
+              await github.rest.repos.createRelease({
+                owner, repo, tag_name: CURRENT_TAG, name: CURRENT_TAG, body, draft: true,
+              });
+            }

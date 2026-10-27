@@ -1,0 +1,55 @@
+name: pelton
+arch: amd64
+platform: linux
+version: ${VERSION}
+section: mail
+priority: optional
+maintainer: "Arne K. <me@arne.sh>"
+description: |
+  Open-source cross-platform desktop email client.
+vendor: "Arne K. and the Pelton contributors"
+homepage: "https://github.com/peltonapp/Pelton"
+license: GPL-3.0-or-later
+
+contents:
+  - src: ./build/bin/Pelton
+    dst: /usr/bin/pelton
+    file_info:
+      mode: 0755
+  - src: ./build/linux/pelton.desktop
+    dst: /usr/share/applications/pelton.desktop
+  - src: ./build/linux/pelton.metainfo.xml
+    dst: /usr/share/metainfo/pelton.metainfo.xml
+  - src: ./build/icons/pelton-default.png
+    dst: /usr/share/icons/hicolor/1024x1024/apps/pelton.png
+  - src: ./build/icons/pelton-default.png
+    dst: /usr/share/pixmaps/pelton.png
+  # GPL-3.0 plus the warranty/liability terms that go with the copy
+  - src: ./LICENSE
+    dst: /usr/share/doc/pelton/LICENSE
+  - src: ./DISCLAIMER.md
+    dst: /usr/share/doc/pelton/DISCLAIMER.md
+
+# Fedora runtime package names; applied to the .rpm. The .deb overrides these
+# below with the Debian/Ubuntu names.
+depends:
+  - gtk3
+  - webkit2gtk4.1
+
+rpm:
+  group: Applications/Internet
+  # posttrans is rpm-specific and only valid here, not under overrides.
+  scripts:
+    posttrans: ./.github/nfpm/posttrans.sh
+
+# The gtk3/webkit2gtk runtime ships under different package names on Debian, and
+# Ubuntu 24.04's t64 transition renamed libgtk-3-0 to libgtk-3-0t64, so the .deb
+# gets its own dependency list and a postinstall hook that refreshes the
+# desktop/icon caches (the .rpm does the same via posttrans above).
+overrides:
+  deb:
+    depends:
+      - "libgtk-3-0 | libgtk-3-0t64"
+      - "libwebkit2gtk-4.1-0"
+    scripts:
+      postinstall: ./.github/nfpm/posttrans.sh

@@ -1,0 +1,635 @@
+name: Release builds
+
+# Builds Pelton and attaches the installers to the release for a version tag.
+# All builds are unsigned (no Apple notarization, no Windows code signing) -
+# see README/CI notes for what that means for users.
+#
+# The builds run on the *tag push*, not on publish, so the assets are already
+# sitting on the draft by the time anyone looks at it: pushing v1.2.3 has
+# draft-release.yml write the changelog into a draft while this workflow fills
+# it with installers. Publishing then stays a manual, instant act with nothing
+# left to wait for, and it rebuilds nothing.
+#
+# The one thing that does wait for publishing is the Copr submission, which
+# pushes to a live dnf repo real users install from. That must not happen while
+# the release is still an unpublished draft.
+#
+# workflow_dispatch takes an optional tag: with one it builds and uploads into
+# that tag's existing release (repairing a draft whose build failed, or one
+# tagged before this workflow existed), without one it only exercises the build
+# steps and uploads nothing.
+on:
+  push:
+    tags:
+      - "v*"
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and upload into, e.g. v2026.3.3. Empty builds without uploading."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: "1.25"
+  # The release these installers belong to, empty when the run is only
+  # exercising the build steps. Job-level `if:` cannot read env, so the same
+  # condition is spelled out on the jobs that need it.
+  RELEASE_TAG: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || '' }}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Give the build jobs somewhere to upload to. draft-release.yml reacts to the
+  # same tag push and normally has the draft up within seconds, so this just
+  # waits for it; it only creates one itself if that job never got there, which
+  # would otherwise lose a whole build to a missing release.
+  #
+  # It runs even with no tag (a plain dispatch) and does nothing, so the build
+  # jobs can depend on it unconditionally.
+  # ---------------------------------------------------------------------------
+  draft:
+    if: github.event_name != 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for the release to exist
+        if: env.RELEASE_TAG != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for _ in $(seq 1 30); do
+            if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "release $RELEASE_TAG exists, builds can upload into it"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "no release for $RELEASE_TAG after five minutes, creating an empty draft"
+          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft --title "$RELEASE_TAG" --notes ""
+
+  # ---------------------------------------------------------------------------
+  # macOS: Apple Silicon only. Intel builds were dropped (no runner coverage
+  # to keep validating them, and the target audience has moved to arm64).
+  # ---------------------------------------------------------------------------
+  macos:
+    needs: draft
+    if: github.event_name != 'release'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-14
+            label: applesilicon
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2)
+
+      - name: Install dependencies
+        run: |
+          go mod download
+          cd frontend && pnpm install --frozen-lockfile
+
+      - name: Resolve version
+        id: version
+        run: echo "version=${RELEASE_TAG:-dev}" >> "$GITHUB_OUTPUT"
+
+      # Stamp info.productVersion so the bundle's Info.plist
+      # (CFBundleVersion / CFBundleShortVersionString, i.e. Finder's Get
+      # Info) matches the app instead of the checked-in dev placeholder.
+      # Without this, every release reported the same bundle version and a
+      # stale app copy was indistinguishable from the new one (#83).
+      - name: Stamp product version
+        run: |
+          ver="${{ steps.version.outputs.version }}"
+          jq --arg v "${ver#v}" '.info.productVersion = $v' wails.json > wails.json.tmp
+          mv wails.json.tmp wails.json
+
+      - name: Build (${{ matrix.arch }})
+        run: wails build -platform darwin/${{ matrix.arch }} -ldflags "-X main.version=${{ steps.version.outputs.version }}"
+
+      # Best-effort: the Liquid Glass dynamic icon needs actool from a recent
+      # enough Xcode (macOS 26 / Xcode 26). If the hosted runner's Xcode is
+      # older, this step just leaves the .app with the static .icns fallback
+      # that's already embedded via Info.plist - it does not fail the build.
+      - name: Compile Liquid Glass icon (best-effort)
+        run: |
+          if xcrun --find actool >/dev/null 2>&1; then
+            scripts/build-icon.sh || echo "actool present but icon compile failed; shipping static .icns fallback"
+          else
+            echo "actool not available on this runner; shipping static .icns fallback"
+          fi
+
+      # Ad-hoc self-sign (no certificate, no secrets, free). This is not
+      # notarization and does not remove the Gatekeeper "unidentified
+      # developer" prompt, but it stops the app from being flagged as
+      # "damaged" after download/zip, which unsigned-and-unstamped bundles are
+      # prone to.
+      - name: Ad-hoc codesign
+        run: codesign --force --deep -s - "build/bin/Pelton.app"
+
+      - name: Zip .app
+        run: ditto -c -k --sequesterRsrc --keepParent "build/bin/Pelton.app" "build/bin/Pelton-${{ steps.version.outputs.version }}-macos-${{ matrix.label }}-app.zip"
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Build .dmg
+        run: |
+          rm -f "build/bin/Pelton.dmg"
+          # a dmg's volume icon is always shown the traditional (pre-Liquid
+          # Glass) way regardless of which macOS mounts it, so always use the
+          # repo's normal, properly rounded-corner icns here - the Liquid
+          # Glass step's own pelton.icns fallback isn't pre-masked and showed
+          # up with a square outline around the icon.
+          icns="build/icons/pelton.icns"
+          create-dmg \
+            --volname "Pelton" \
+            --volicon "$icns" \
+            --window-size 540 380 \
+            --icon-size 128 \
+            --icon "Pelton.app" 130 170 \
+            --app-drop-link 410 170 \
+            --hide-extension "Pelton.app" \
+            "build/bin/Pelton-${{ steps.version.outputs.version }}-macos-${{ matrix.label }}.dmg" \
+            "build/bin/Pelton.app"
+
+      - name: Upload to release
+        if: env.RELEASE_TAG != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            "build/bin/Pelton-${{ steps.version.outputs.version }}-macos-${{ matrix.label }}.dmg" \
+            "build/bin/Pelton-${{ steps.version.outputs.version }}-macos-${{ matrix.label }}-app.zip" \
+            --clobber
+
+  # ---------------------------------------------------------------------------
+  # Windows amd64, packaged with Wails' built-in NSIS installer support (free,
+  # no signing). windows-latest ships NSIS preinstalled.
+  # ---------------------------------------------------------------------------
+  windows:
+    needs: draft
+    if: github.event_name != 'release'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2)
+
+      - name: Install NSIS
+        shell: pwsh
+        run: |
+          choco install nsis -y
+          # choco updates the machine PATH, but GitHub Actions snapshots PATH
+          # at job start and doesn't pick that up mid-job - add makensis's
+          # install dir to $GITHUB_PATH explicitly so later steps see it.
+          echo "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Install dependencies
+        run: |
+          go mod download
+          cd frontend
+          pnpm install --frozen-lockfile
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: echo "version=${RELEASE_TAG:-dev}" >> "$GITHUB_OUTPUT"
+
+      # Stamp info.productVersion into the exe's version resources and the
+      # NSIS installer metadata, same reasoning as the macOS job (#83).
+      # NSIS VIProductVersion/VIFileVersion and the exe manifest require a
+      # 4-part numeric version; the bundled Windows templates append ".0" to
+      # info.productVersion, so pad it to exactly 3 numeric parts here. That
+      # keeps SemVer tags working ("1.0.9" -> "1.0.9.0") and fixes CalVer tags
+      # with fewer parts ("2026.3" -> "2026.3.0" -> "2026.3.0.0").
+      - name: Stamp product version
+        shell: bash
+        run: |
+          ver="${{ steps.version.outputs.version }}"
+          v="${ver#v}"
+          num="${v%%-*}"
+          IFS='.' read -ra parts <<< "$num"
+          while [ "${#parts[@]}" -lt 3 ]; do parts+=("0"); done
+          pv="${parts[0]}.${parts[1]}.${parts[2]}"
+          jq --arg v "$pv" '.info.productVersion = $v' wails.json > wails.json.tmp
+          mv wails.json.tmp wails.json
+
+      - name: Build + NSIS installer
+        run: wails build -platform windows/amd64 -nsis -ldflags "-X main.version=${{ steps.version.outputs.version }}"
+
+      - name: Rename installer
+        shell: bash
+        run: mv "build/bin/Pelton-amd64-installer.exe" "build/bin/Pelton-${{ steps.version.outputs.version }}-windows-amd64-installer.exe"
+
+      # the exe the installer wraps, shipped on its own for a portable install
+      # (#377). Pelton is a single executable, so the installer only adds the
+      # shortcuts and the uninstall entry; the same build runs from wherever it
+      # is put, including a usb stick. Same binary, same signature-less state,
+      # so this costs a copy rather than a second build.
+      - name: Stage portable exe
+        shell: bash
+        run: cp "build/bin/Pelton.exe" "build/bin/Pelton-${{ steps.version.outputs.version }}-windows-amd64-portable.exe"
+
+      - name: Upload to release
+        if: env.RELEASE_TAG != ''
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            "build/bin/Pelton-${{ steps.version.outputs.version }}-windows-amd64-installer.exe" \
+            "build/bin/Pelton-${{ steps.version.outputs.version }}-windows-amd64-portable.exe" \
+            --clobber
+
+  # ---------------------------------------------------------------------------
+  # Linux: the raw amd64 binary plus a .deb (Debian/Ubuntu) and .rpm (Fedora),
+  # both built with nfpm (free, MIT-licensed, no external signing service).
+  # Package metadata lives in .github/nfpm/pelton.yaml.
+  # ---------------------------------------------------------------------------
+  linux:
+    needs: draft
+    if: github.event_name != 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install system build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev build-essential pkg-config rpm
+
+      - name: Install wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2)
+
+      - name: Install nfpm
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
+      - name: Install dependencies
+        run: |
+          go mod download
+          cd frontend && pnpm install --frozen-lockfile
+
+      - name: Resolve version
+        id: version
+        run: |
+          raw="${RELEASE_TAG:-0.0.0-dev}"
+          echo "version=$raw" >> "$GITHUB_OUTPUT"
+          # package managers reject a leading "v", so strip it for .deb/.rpm.
+          echo "pkg_version=${raw#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: wails build -platform linux/amd64 -tags webkit2_41 -ldflags "-X main.version=${{ steps.version.outputs.version }}"
+
+      - name: Stage raw binary
+        run: cp "build/bin/Pelton" "build/bin/Pelton-${{ steps.version.outputs.version }}-linux-amd64"
+
+      - name: Build .deb
+        env:
+          VERSION: ${{ steps.version.outputs.pkg_version }}
+        run: nfpm package --config .github/nfpm/pelton.yaml --packager deb --target "build/bin/Pelton-${{ steps.version.outputs.version }}-linux-amd64.deb"
+
+      - name: Build .rpm
+        env:
+          VERSION: ${{ steps.version.outputs.pkg_version }}
+        run: nfpm package --config .github/nfpm/pelton.yaml --packager rpm --target "build/bin/Pelton-${{ steps.version.outputs.version }}-linux-fedora-x86_64.rpm"
+
+      - name: Upload to release
+        if: env.RELEASE_TAG != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            "build/bin/Pelton-${{ steps.version.outputs.version }}-linux-amd64" \
+            "build/bin/Pelton-${{ steps.version.outputs.version }}-linux-amd64.deb" \
+            "build/bin/Pelton-${{ steps.version.outputs.version }}-linux-fedora-x86_64.rpm" \
+            --clobber
+
+  # ---------------------------------------------------------------------------
+  # Fedora Copr: submits a source RPM to Fedora's free community repo hosting
+  # (copr.fedorainfracloud.org) so users get real `dnf` installs:
+  #   sudo dnf copr enable <COPR_USERNAME>/pelton
+  #   sudo dnf install pelton
+  # Copr does the actual RPM build on its own chroots; the spec
+  # (.github/copr/pelton.spec) does no compilation, it just installs the
+  # binary this job already built here (with full network access, unlike
+  # Copr's sandboxed builders). Needs the COPR_LOGIN/COPR_USERNAME/COPR_TOKEN
+  # secrets and a Copr project named "pelton" to already exist - see the repo
+  # docs/PR description for the one-time setup steps.
+  # ---------------------------------------------------------------------------
+  fedora-copr:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install system build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev build-essential pkg-config rpm python3-pip
+
+      - name: Install wails CLI + copr-cli
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2)
+          pip install --user copr-cli
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        run: |
+          go mod download
+          cd frontend && pnpm install --frozen-lockfile
+
+      - name: Resolve version
+        id: version
+        run: |
+          raw="${RELEASE_TAG:-0.0.0-dev}"
+          echo "rpm_version=${raw#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: wails build -platform linux/amd64 -tags webkit2_41 -ldflags "-X main.version=${{ steps.version.outputs.rpm_version }}"
+
+      - name: Assemble source tarball
+        env:
+          VERSION: ${{ steps.version.outputs.rpm_version }}
+        run: |
+          stage="pelton-$VERSION"
+          mkdir -p "$stage"
+          cp build/bin/Pelton "$stage/pelton"
+          cp build/linux/pelton.desktop "$stage/pelton.desktop"
+          cp build/linux/pelton.metainfo.xml "$stage/pelton.metainfo.xml"
+          cp build/icons/pelton-default.png "$stage/pelton.png"
+          tar czf ".github/copr/pelton-$VERSION.tar.gz" "$stage"
+
+      - name: Build SRPM
+        env:
+          VERSION: ${{ steps.version.outputs.rpm_version }}
+        run: |
+          mkdir -p ~/rpmbuild/SOURCES ~/rpmbuild/SRPMS
+          cp ".github/copr/pelton-$VERSION.tar.gz" ~/rpmbuild/SOURCES/
+          # a plain `rpmbuild --define` only affects this one invocation; it
+          # is not stored inside the resulting SRPM. Copr re-runs `rpmbuild
+          # -bs` from the spec bundled in that SRPM as its own first build
+          # step, with no knowledge of our custom define, so %{_pelton_version}
+          # came out unexpanded there and broke Version/Source0. Bake the
+          # real version into the spec text itself instead, so it's self
+          # contained and needs no external define ever again.
+          { echo "%global _pelton_version $VERSION"; cat ".github/copr/pelton.spec"; } > /tmp/pelton.spec
+          rpmbuild -bs /tmp/pelton.spec
+          cp ~/rpmbuild/SRPMS/*.src.rpm "pelton-$VERSION.src.rpm"
+
+      - name: Configure copr-cli credentials
+        env:
+          COPR_LOGIN: ${{ secrets.COPR_LOGIN }}
+          COPR_USERNAME: ${{ secrets.COPR_USERNAME }}
+          COPR_TOKEN: ${{ secrets.COPR_TOKEN }}
+        run: |
+          mkdir -p ~/.config
+          cat > ~/.config/copr << EOF
+          [copr-cli]
+          login = $COPR_LOGIN
+          username = $COPR_USERNAME
+          token = $COPR_TOKEN
+          copr_url = https://copr.fedorainfracloud.org
+          EOF
+          chmod 600 ~/.config/copr
+
+      - name: Submit build to Copr
+        env:
+          VERSION: ${{ steps.version.outputs.rpm_version }}
+          COPR_USERNAME: ${{ secrets.COPR_USERNAME }}
+        run: copr-cli build "$COPR_USERNAME/Pelton" "pelton-$VERSION.src.rpm" --nowait
+
+  # ---------------------------------------------------------------------------
+  # Flathub source tarball: Flathub builds with no network access, so the
+  # manifest (packaging/flatpak/sh.arne.Pelton.yml) cannot fetch dependencies
+  # itself. This job assembles one archive holding the repository sources, Go's
+  # vendor/ and a symlink-free frontend/node_modules, which is everything the
+  # sandbox needs to run `vite build` and `go build` offline.
+  # ---------------------------------------------------------------------------
+  flatpak-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Resolve version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME:-0.0.0-dev}" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble vendored tarball
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          stage="pelton-${VERSION#v}"
+          mkdir -p "$stage"
+          git archive HEAD | tar -x -C "$stage"
+
+          # the manifest reads the tag from here, so bumping the flatpak is
+          # only ever the url and its checksum.
+          echo "$VERSION" > "$stage/VERSION"
+
+          # appstream wants the shipped version listed; stamping it here means
+          # the flatpak's release history is right without anyone editing xml
+          # by hand at release time.
+          sed -i \
+            "s|<release version=\"[^\"]*\" date=\"[^\"]*\" />|<release version=\"${VERSION#v}\" date=\"$(date -u +%F)\" />|" \
+            "$stage/build/linux/pelton.metainfo.xml"
+
+          go mod vendor
+          mv vendor "$stage/vendor"
+
+          # pnpm's default store is a symlink farm pointing outside the package
+          # directory, which does not survive being tarred up and unpacked
+          # somewhere else. hoisted gives real directories.
+          (cd "$stage/frontend" && pnpm install --frozen-lockfile --config.node-linker=hoisted)
+
+          tar czf "Pelton-$VERSION-vendored.tar.gz" "$stage"
+
+      - name: Report checksum
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # the first flathub submission needs this by hand; later bumps are
+          # done by flathub's external data checker.
+          sha256sum "Pelton-$VERSION-vendored.tar.gz" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            "Pelton-$VERSION-vendored.tar.gz" \
+            --clobber
+
+  # ---------------------------------------------------------------------------
+  # Publish SHA256SUMS.txt and put the same digests in the release notes, so a
+  # download can be checked against something the project published rather than
+  # taken on trust.
+  #
+  # It hashes what the release actually serves rather than a local build
+  # artifact: that is the file a user gets, so it is the file worth attesting
+  # to.
+  #
+  # It only needs flatpak-source. The installers were uploaded by the tag-push
+  # run and have been sitting on the draft since; the vendored tarball is the
+  # one asset that appears on publish, so it is the only one worth waiting for.
+  # Naming the build jobs here as well would not add a guarantee and would cost
+  # the job entirely: they are skipped on the release event, and a skipped
+  # dependency skips everything that needs it.
+  #
+  # pelton.app/thanks reads the digest out of the release notes, not out of the
+  # asset. Release downloads redirect to a host that sends no CORS headers, so a
+  # page cannot fetch SHA256SUMS.txt at all, while api.github.com serves the
+  # body happily. The file stays for humans and for `sha256sum -c`.
+  # ---------------------------------------------------------------------------
+  checksums:
+    needs: flatpak-source
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Hash every published asset
+        run: |
+          set -euo pipefail
+          mkdir -p assets
+          gh release download "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir assets \
+            --clobber
+          # a re-run finds the previous SHA256SUMS.txt sitting there; hashing it
+          # would be meaningless and it must never list itself.
+          rm -f assets/SHA256SUMS.txt
+          (cd assets && sha256sum * | sort -k2 > ../SHA256SUMS.txt)
+          cat SHA256SUMS.txt
+
+      - name: Upload SHA256SUMS.txt
+        run: |
+          gh release upload "$TAG" SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+
+      - name: Put the digests in the release notes
+        run: |
+          set -euo pipefail
+          # GitHub returns the body with CRLF. Left alone, every pattern below
+          # anchored to end-of-line silently fails to match, and the section is
+          # appended again on a re-run instead of replacing the old one.
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body \
+            | tr -d '\r' > body.md
+
+          # idempotent: a re-run replaces the section rather than adding a
+          # second one. Everything from the heading to the next top-level
+          # heading or horizontal rule goes.
+          if grep -q '^## Checksums$' body.md; then
+            awk '
+              /^## Checksums$/ { skip = 1; next }
+              skip && (/^## / || /^---$/) { skip = 0 }
+              !skip { print }
+            ' body.md > body.trimmed && mv body.trimmed body.md
+          fi
+
+          # the trailing blank line is not cosmetic: a table that runs straight
+          # into the disclaimer's `---` stops being a table.
+          {
+            echo "## Checksums"
+            echo
+            echo "SHA-256 of every file on this release, also published as [SHA256SUMS.txt](https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/SHA256SUMS.txt), which \`sha256sum -c\` reads directly."
+            echo
+            echo "| File | SHA-256 |"
+            echo "| --- | --- |"
+            while read -r digest file; do
+              echo "| \`$file\` | \`$digest\` |"
+            done < SHA256SUMS.txt
+            echo
+          } > section.md
+
+          # the disclaimer stays last, so the section goes in above it when
+          # there is one and at the end when there is not.
+          if grep -qn '^---$' body.md; then
+            line=$(grep -n '^---$' body.md | tail -n1 | cut -d: -f1)
+            head -n $((line - 1)) body.md > new-body.md
+            cat section.md >> new-body.md
+            tail -n +"$line" body.md >> new-body.md
+          else
+            cat body.md section.md > new-body.md
+          fi
+
+          # tag_name is not passed, and gh keeps it: this is a published
+          # release, not the draft whose tag an earlier notes update dropped.
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file new-body.md

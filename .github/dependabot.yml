@@ -1,0 +1,29 @@
+version: 2
+
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    # no target-branch: main is the trunk and the default branch, which is where
+    # dependabot opens against on its own. A dependency fix that has to ship
+    # before the next release is cherry-picked onto the release branch like any
+    # other fix.
+    schedule:
+      interval: "weekly"
+    groups:
+      go-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    groups:
+      frontend-dependencies:
+        patterns:
+          - "*"
+    ignore:
+      # typescript 7 (the native port) breaks svelte-check; hold at 6.x until the
+      # svelte language tools support it.
+      - dependency-name: "typescript"
+        versions: [">=7.0.0"]
