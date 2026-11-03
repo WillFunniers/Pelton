@@ -14,6 +14,13 @@ This is not an official Pelton release and is not endorsed by the upstream proje
 Bug reports about upstream behaviour belong upstream; issues introduced by this fork
 are listed under [docs/personal/features.md](docs/personal/features.md) and are my own.
 
+## Maintainer
+
+WyMok (`WillFunniers`) maintains this customization; upstream Pelton is authored and maintained
+by Arne K. and the Pelton contributors — see [AUTHORS.md](AUTHORS.md). This fork is not an
+official Pelton release, and nothing here is endorsed by the upstream project. Issues caused by
+the customisations belong to this repository; upstream behaviour belongs upstream.
+
 ## What differs from upstream
 
 Everything else — sync engine, IMAP/SMTP handling, database schema, theming system,

@@ -1,10 +1,16 @@
-> **This repository is Pelton Personal**, a personal fork of [peltonapp/Pelton](https://github.com/peltonapp/Pelton)
-> (upstream `v2026.4.6`, commit `79c9858`) with a Simplified Chinese UI and a set of local
-> customisations. It is GPL-3.0-or-later, like upstream. See [PELTON-PERSONAL.md](PELTON-PERSONAL.md)
-> for what differs, how to build it, and how attribution works.
+> **WyMok-maintained customization of Pelton.**
+>
+> This repository contains a WyMok-maintained customization of Pelton. Pelton remains the
+> upstream project; please refer to [peltonapp/Pelton](https://github.com/peltonapp/Pelton) for its
+> original authorship and history. Based on upstream `v2026.4.6` (commit `79c9858`),
+> GPL-3.0-or-later. See [PELTON-PERSONAL.md](PELTON-PERSONAL.md) for what differs and how to build it.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/peltonapp/Pelton/13f56136136bc00b9c8721dc2042fc9c84e1b3a7/.github/pelton-large-bg.png" alt="Pelton Banner">
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> &nbsp;·&nbsp; <a href="README.zh-CN.md">简体中文</a>
 </p>
 
 
