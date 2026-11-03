@@ -1,6 +1,7 @@
 > **由 WyMok 维护的 Pelton 定制版。**
 >
-> 本仓库是 Pelton 的定制版本，由 WyMok 维护。Pelton 仍为上游项目，其原始作者与历史请见
+> 这是由 WyMok 维护的 Pelton 社区定制版本，并非 Pelton 官方发行版，也不代表原作者或上游项目的
+> 官方认可。Pelton 仍为上游项目，其原始作者与历史请见
 > [peltonapp/Pelton](https://github.com/peltonapp/Pelton)。本定制基于上游 `v2026.4.6`
 > （提交 `79c9858`），以 GPL-3.0-or-later 分发。与上游的差异及构建方式见
 > [PELTON-PERSONAL.md](PELTON-PERSONAL.md)。
@@ -175,6 +176,10 @@ Pelton 是一款现代的自由及开源软件（FOSS）邮件客户端，用 Go
 **在这里查看完整历史：[star-history.com](https://www.star-history.com/?repos=peltonapp%2Fpelton&type=date&releases&legend=bottom-right)**
 
 ## <img src="https://api.iconify.design/tabler/download.svg?color=white" width="26" style="vertical-align: -4px;"> 安装
+
+**下方链接安装的是上游 Pelton，不是本定制版。** 本仓库没有 Release，也不提供预编译安装包；
+定制内容位于 `wymok/main` 分支，目前需要从源码构建（见 [PELTON-PERSONAL.md](PELTON-PERSONAL.md)）。
+下面的上游安装说明保留以供参考。
 
 | <img src="https://api.iconify.design/tabler/brand-apple.svg?color=white" width="18" style="vertical-align: -4px;"> [macOS](https://docs.pelton.app/install/macos/) | <img src="https://api.iconify.design/tabler/brand-windows.svg?color=white" width="18" style="vertical-align: -4px;"> [Windows](https://docs.pelton.app/install/windows/) | <img src="https://api.iconify.design/tabler/terminal-2.svg?color=white" width="18" style="vertical-align: -4px;"> [Linux](https://docs.pelton.app/install/linux/) |
 |:---:|:---:|:---:|

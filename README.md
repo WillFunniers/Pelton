@@ -1,7 +1,8 @@
 > **WyMok-maintained customization of Pelton.**
 >
-> This repository contains a WyMok-maintained customization of Pelton. Pelton remains the
-> upstream project; please refer to [peltonapp/Pelton](https://github.com/peltonapp/Pelton) for its
+> This is an unofficial, community-maintained customization of Pelton by WyMok. It is not an
+> official Pelton release and is not affiliated with or endorsed by the original authors. Pelton
+> remains the upstream project; see [peltonapp/Pelton](https://github.com/peltonapp/Pelton) for its
 > original authorship and history. Based on upstream `v2026.4.6` (commit `79c9858`),
 > GPL-3.0-or-later. See [PELTON-PERSONAL.md](PELTON-PERSONAL.md) for what differs and how to build it.
 
@@ -173,6 +174,12 @@ Pelton is a modern, Free and Open-Source Software (FOSS) email client written in
 **View full history here: [star-history.com](https://www.star-history.com/?repos=peltonapp%2Fpelton&type=date&releases&legend=bottom-right)**
 
 ## <img src="https://api.iconify.design/tabler/download.svg?color=white" width="26" style="vertical-align: -4px;"> Installation
+
+**The links below install upstream Pelton, not this customization.** This repository has no
+releases and publishes no prebuilt binaries; the customisations live on the `wymok/main`
+branch and are currently built from source, as described in
+[PELTON-PERSONAL.md](PELTON-PERSONAL.md). The stock upstream instructions are kept below for
+reference.
 
 | <img src="https://api.iconify.design/tabler/brand-apple.svg?color=white" width="18" style="vertical-align: -4px;"> [macOS](https://docs.pelton.app/install/macos/) | <img src="https://api.iconify.design/tabler/brand-windows.svg?color=white" width="18" style="vertical-align: -4px;"> [Windows](https://docs.pelton.app/install/windows/) | <img src="https://api.iconify.design/tabler/terminal-2.svg?color=white" width="18" style="vertical-align: -4px;"> [Linux](https://docs.pelton.app/install/linux/) |
 |:---:|:---:|:---:|

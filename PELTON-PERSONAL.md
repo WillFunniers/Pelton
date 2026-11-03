@@ -1,8 +1,9 @@
-# Pelton Personal
+# About This Customization
 
-A personal fork of [Pelton](https://github.com/peltonapp/Pelton) — the open-source,
-privacy-first desktop email client (Go + Wails backend, Svelte 5 frontend) — with a
-Simplified Chinese interface and a small set of local customisations.
+A WyMok-maintained customization of [Pelton](https://github.com/peltonapp/Pelton) — the
+open-source, privacy-first desktop email client (Go + Wails backend, Svelte 5 frontend).
+The Simplified Chinese catalog was developed here and has since been merged upstream; what
+remains specific to this repository is the smaller set of customisations listed below.
 
 - **Upstream base**: `v2026.4.6` (commit `79c9858`)
 - **This line's version string**: `v2026.4.6_zh.1`
@@ -28,7 +29,7 @@ licensing and privacy behaviour — is upstream code. In short:
 
 | Area | Change |
 |---|---|
-| Localisation | Simplified Chinese catalog (`zh-CN`), 12 catalogs kept key-identical |
+| Localisation | Extra `zh-CN` strings for the customisations below (scheduled-send viewer, outbox); the catalog as a whole now also ships upstream |
 | Mail providers | Chinese presets: QQ Mail, 163, 126, 139 (China Mobile), plus NetEase/QQ app-password guidance |
 | Compatibility | IMAP `ID` (RFC 2971) so NetEase servers allow `SELECT`; legacy TLS ciphers for older servers |
 | Sent folder | QQ/163 aware Sent folder resolution, with duplicate-append protection |
@@ -90,8 +91,12 @@ pnpm build
 
 Upstream Pelton is by Arne K. and the Pelton contributors; `AUTHORS.md` and the git history
 retain their authorship. Third-party components and their licences are recorded in
-[licenses/manifest.json](licenses/manifest.json). Localisation work, the provider presets and
-the customisations described above were written for this fork.
+[licenses/manifest.json](licenses/manifest.json).
+
+The Simplified Chinese catalog began on this line and was contributed upstream, where it has
+been merged and is now maintained as part of Pelton; this repository keeps a copy that carries
+the extra strings for its own features. The provider presets, the scheduled-send viewer and the
+remaining customisations are maintained only here.
 
 Because this is a GPL-3.0-or-later derivative, redistribution is welcome under the same
 licence. If you run a modified version, keep the upstream copyright notices and licence text.
