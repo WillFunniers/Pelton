@@ -6,9 +6,22 @@
 // `translate(-50%, -50%)`, so a fixed popup opened inside one is offset by the
 // dialog's own position and clipped by its `overflow: hidden`. Leaving the
 // dialog's subtree is what makes the coordinates mean what they say.
-export function portal(node: HTMLElement) {
-  document.body.appendChild(node)
+//
+// `target` moves it somewhere else instead: a picker that renders inline inside
+// its host portals into a box the host reserves for it, so it can be laid out
+// above content it is nested deep inside.
+export function portal(node: HTMLElement, target?: HTMLElement | null) {
+  const move = (dest: HTMLElement | null | undefined): void => {
+    const into = dest ?? document.body
+    if (into !== node.parentElement) {
+      into.appendChild(node)
+    }
+  }
+  move(target)
   return {
+    update(next: HTMLElement | null | undefined): void {
+      move(next)
+    },
     destroy(): void {
       node.remove()
     },

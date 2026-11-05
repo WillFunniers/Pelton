@@ -96,7 +96,9 @@
   let sendCaretEl: HTMLButtonElement
   let sendMenuEl: HTMLDivElement
   let sendMenuLeft = 0
-  let sendMenuTop = 0
+  let sendMenuBottom = 0
+  // the box at the top of the menu that the picker's calendar is rendered into
+  let sendCalendarEl: HTMLDivElement | null = null
   let customSendValue = ''
 
   interface SendPreset {
@@ -163,13 +165,14 @@
       const caretRight = caretRect.right / scale
       const caretTop = caretRect.top / scale
       const menuW = sendMenuEl.offsetWidth
-      const menuH = sendMenuEl.offsetHeight
       const vw = window.innerWidth / scale
       const vh = window.innerHeight / scale
       const maxLeft = vw - menuW - margin
-      const maxTop = vh - menuH - margin
       sendMenuLeft = Math.min(Math.max(caretRight - menuW, margin), Math.max(margin, maxLeft))
-      sendMenuTop = Math.min(Math.max(caretTop - 8 - menuH, margin), Math.max(margin, maxTop))
+      // anchored by its bottom edge rather than its top: the menu grows when the
+      // calendar opens inside it, and growing upward keeps it attached to the
+      // caret that opened it (a top anchor would push it down over the footer).
+      sendMenuBottom = vh - caretTop + 8
     }
   }
 
@@ -753,8 +756,12 @@
     role="menu"
     aria-label={$t('compose.sendLater.ariaLabel')}
     bind:this={sendMenuEl}
-    style={`left:${sendMenuLeft}px; top:${sendMenuTop}px`}
+    style={`left:${sendMenuLeft}px; bottom:${sendMenuBottom}px; max-height:calc(100vh - ${sendMenuBottom + 8}px - 8px)`}
   >
+    <!-- the calendar opens here, at the top, so the menu grows upward into
+         empty space and the presets, the field and the buttons below it keep
+         their positions. -->
+    <div class="send-calendar" bind:this={sendCalendarEl}></div>
     {#each formattedSendPresets as p}
       <button type="button" class="send-preset" role="menuitem" on:click={() => sendScheduled(p.when)}>
         <span class="sp-icon"><svelte:component this={p.icon} size={16} stroke={1.6} /></span>
@@ -767,6 +774,8 @@
       <DateTimePicker
         id={`send-custom-${session.id}`}
         mode="datetime"
+        inline
+        inlineHost={sendCalendarEl}
         bind:value={customSendValue}
         confirmLabel={$t('compose.sendLater.schedule')}
         on:confirm={confirmCustomSend}
@@ -1019,10 +1028,10 @@
   }
 
   /* the send-later menu is fixed-positioned and rendered outside .compose so
-     the pane's own overflow:hidden never clips it. left/top are computed in
-     toggleSendMenu from the menu's own measured size, clamped to the
-     viewport, so it stays fully on-screen regardless of where the compose
-     pane (and its caret) sits. */
+     the pane's own overflow:hidden never clips it. left is computed in
+     toggleSendMenu from the menu's own measured width; the vertical anchor is
+     its bottom edge, so the menu grows upward when the calendar opens inside
+     it. the inline max-height keeps the top edge inside the viewport. */
   .send-menu-scrim {
     position: fixed;
     inset: 0;
@@ -1038,7 +1047,10 @@
     z-index: 141;
     pointer-events: auto;
     width: 260px;
-    max-height: min(360px, calc(100vh - 2 * var(--space-5)));
+    /* the calendar opens inside the menu, so the cap is the space above the
+       caret (set inline) rather than a fixed 360px; the list scrolls only when
+       the window is too short to hold it. */
+    max-height: calc(100vh - 2 * var(--space-5));
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -1048,6 +1060,12 @@
     border-radius: var(--radius-card);
     background: var(--surface-overlay);
     box-shadow: var(--shadow-overlay);
+  }
+
+  /* empty until the calendar is rendered into it: without this the flex gap
+     would add a strip above the presets. */
+  .send-calendar:empty {
+    display: none;
   }
 
   .send-preset {
