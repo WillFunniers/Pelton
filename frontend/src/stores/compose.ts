@@ -6,7 +6,7 @@
 import { writable, get } from 'svelte/store'
 import type { Address, Draft, EditorMode, MessageDetail, ComposeAttachment } from '../lib/types'
 import { getSetting, setSetting } from '../lib/api'
-import { renderBody } from '../lib/mailcompose'
+import { formatAddress, formatAddressList, parseAddressList, renderBody } from '../lib/mailcompose'
 import { formatFullDate } from '../lib/format'
 import { escapeHtml, textToHtml } from '../lib/richtext'
 
@@ -149,9 +149,9 @@ export function openComposeWith(accountId: number, mode: EditorMode, prefill: Ma
 // body and threading references come from the original message.
 export function openReply(detail: MessageDetail, mode: EditorMode, replyAll: boolean): number {
   const session = blankSession(detail.accountId, mode)
-  session.to = detail.fromAddress
+  session.to = formatAddress({ name: detail.fromName, email: detail.fromAddress })
   if (replyAll && detail.ccAddresses) {
-    session.cc = detail.ccAddresses
+    session.cc = formatAddressList(parseAddressList(detail.ccAddresses))
     session.showCc = true
   }
   session.subject = withPrefix(detail.subject, 'Re:')
@@ -198,8 +198,8 @@ export function openDraftSession(draft: Draft): number {
     subject: req.subject,
     body: mode === 'wysiwyg' ? req.html : req.text,
     attachments: req.attachments ?? [],
-    inReplyTo: req.inReplyTo,
-    references: req.references ?? [],
+    inReplyTo: req.inReplyTo ?? '',
+    references: [...(req.references ?? [])],
     protection: req.protection,
     draftId: draft.id,
     draftMessageId: req.draftMessageId ?? '',
@@ -218,7 +218,7 @@ export function restoreSession(session: ComposeSession): number {
   if (open) {
     return open
   }
-  const restored: ComposeSession = { ...session, id: nextId++, saved: true, minimized: false }
+  const restored: ComposeSession = { ...session, references: [...session.references], id: nextId++, saved: true, minimized: false }
   composeSessions.update((list) => [...list, restored])
   return restored.id
 }
@@ -234,12 +234,6 @@ function bringBack(draftId: number): number {
   return open.id
 }
 
-// formatAddressList turns addresses back into the comma-separated form the
-// address inputs edit.
-function formatAddressList(list: Address[] | null): string {
-  return (list ?? []).map((a) => (a.name ? `${a.name} <${a.email}>` : a.email)).join(', ')
-}
-
 // reopenSession brings a sent-but-undone message back into a fresh compose pane,
 // preserving every edited field. draftId and draftMessageId are reset because
 // the send already removed the local draft and its server copy, so a save here
@@ -247,7 +241,7 @@ function formatAddressList(list: Address[] | null): string {
 export function reopenSession(session: ComposeSession): number {
   // a reopened message already has whatever signature it was sent with, so do not
   // auto-insert defaults again.
-  const restored: ComposeSession = { ...session, id: nextId++, draftId: 0, draftMessageId: '', saved: false, signaturesApplied: true }
+  const restored: ComposeSession = { ...session, references: [...session.references], id: nextId++, draftId: 0, draftMessageId: '', saved: false, signaturesApplied: true }
   composeSessions.update((list) => [...list, restored])
   return restored.id
 }
@@ -324,17 +318,15 @@ function forwardBody(detail: MessageDetail, mode: EditorMode): string {
   return `\n\n${header}\n\n${detail.bodyQuote}\n`
 }
 
-// messageIdRef would be the original Message-ID for threading. the detail dto
-// does not expose it directly today, so we leave it empty and rely on the
-// backend, which has the stored Message-ID, to fill threading on send.
-// TODO(backend): expose the original Message-ID in MessageDetailDTO so replies
-// thread precisely from the frontend reference too.
-function messageIdRef(_detail: MessageDetail): string {
-  return ''
+function messageIdRef(detail: MessageDetail): string {
+  return detail.messageId ?? ''
 }
 
-// buildReferences returns the reference chain for threading. empty for the same
-// reason as messageIdRef above.
-function buildReferences(_detail: MessageDetail): string[] {
-  return []
+function buildReferences(detail: MessageDetail): string[] {
+  const parent = messageIdRef(detail)
+  if (!parent) return []
+  const references = detail.references ?? []
+  const inReplyTo = detail.inReplyTo ?? []
+  const ancestors = references.length ? references : inReplyTo.length === 1 ? inReplyTo : []
+  return [...ancestors, parent]
 }

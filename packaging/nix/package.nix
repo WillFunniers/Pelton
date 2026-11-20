@@ -27,7 +27,7 @@ buildGoModule (finalAttrs: {
 
   proxyVendor = true;
 
-  vendorHash = "sha256-G2xtQFLnxL08WtIVhZAu1EvJic7YMvVHrqC4TMCLF3Q=";
+  vendorHash = "sha256-CbLUhrekFyM/JZwm8Q0iBzIUC+cOye4hLpCJoAQHO2o=";
 
   overrideModAttrs = {
     preBuild = ''
@@ -61,7 +61,7 @@ buildGoModule (finalAttrs: {
       src = "${finalAttrs.src}/frontend";
       pnpm = pnpm_10;
       fetcherVersion = 3;
-      hash = "sha256-uOmD2qDhLX2rtA1C07p43JFZg5LpIlJUIUt7OKqt2g4=";
+      hash = "sha256-0C7IfSZ/hJ2/6SGGHGShsoaZ4C3lIbOklOAtCl8jRVA=";
     };
     pnpmRoot = "frontend";
   };

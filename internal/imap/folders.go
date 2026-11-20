@@ -3,6 +3,7 @@ package imap
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/emersion/go-imap/v2"
 )
@@ -31,7 +32,24 @@ func (f Folder) HasAttr(attr imap.MailboxAttr) bool {
 	return slices.Contains(f.Attrs, attr)
 }
 
-// ListFolders returns every mailbox, including non-selectable containers.
+// StripInboxNamespace returns path without a leading "INBOX" plus delim, the
+// namespace some servers (Courier, Dovecot with prefix=INBOX.) put every folder
+// under, so "INBOX.Sent" becomes "Sent". Any other path, and INBOX itself, is
+// returned unchanged.
+func StripInboxNamespace(path, delim string) string {
+	const inbox = "INBOX"
+	if delim == "" || len(path) <= len(inbox)+len(delim) {
+		return path
+	}
+	if !strings.EqualFold(path[:len(inbox)], inbox) || path[len(inbox):len(inbox)+len(delim)] != delim {
+		return path
+	}
+	return path[len(inbox)+len(delim):]
+}
+
+// ListFolders returns every mailbox, including non-selectable containers. An
+// entry with an empty name is dropped: it cannot be selected, and a later
+// SELECT of it is what a server answers with an invalid mailbox name.
 //
 // The requested options depend on what the server advertises, because the two
 // extensions are not the same thing:
@@ -83,6 +101,9 @@ func (c *Client) listFoldersWith(options *imap.ListOptions) ([]Folder, error) {
 
 	folders := make([]Folder, 0, len(data))
 	for _, d := range data {
+		if d.Mailbox == "" {
+			continue
+		}
 		folders = append(folders, Folder{
 			Name:      d.Mailbox,
 			Delimiter: d.Delim,

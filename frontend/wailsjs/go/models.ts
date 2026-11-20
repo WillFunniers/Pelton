@@ -984,6 +984,24 @@ export namespace desktop {
 		    return a;
 		}
 	}
+	export class EmlExportDTO {
+	    dir: string;
+	    exported: number;
+	    failed: number;
+	    firstError: string;
+
+	    static createFrom(source: any = {}) {
+	        return new EmlExportDTO(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.dir = source["dir"];
+	        this.exported = source["exported"];
+	        this.failed = source["failed"];
+	        this.firstError = source["firstError"];
+	    }
+	}
 	export class FetchOlderResult {
 	    fetched: number;
 	    hasOlder: boolean;
@@ -1309,6 +1327,9 @@ export namespace desktop {
 	    snoozeUntil: string;
 	    senderVip: boolean;
 	    smime: SMIMEDTO;
+	    messageId: string;
+	    inReplyTo: string[];
+	    references: string[];
 	    toAddresses: string;
 	    ccAddresses: string;
 	    bodyPlain: string;
@@ -1351,6 +1372,9 @@ export namespace desktop {
 	        this.snoozeUntil = source["snoozeUntil"];
 	        this.senderVip = source["senderVip"];
 	        this.smime = this.convertValues(source["smime"], SMIMEDTO);
+	        this.messageId = source["messageId"];
+	        this.inReplyTo = source["inReplyTo"];
+	        this.references = source["references"];
 	        this.toAddresses = source["toAddresses"];
 	        this.ccAddresses = source["ccAddresses"];
 	        this.bodyPlain = source["bodyPlain"];

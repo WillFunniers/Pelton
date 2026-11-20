@@ -21,6 +21,7 @@
   import OutboxPanel from './OutboxPanel.svelte'
   import ScheduledPanel from './ScheduledPanel.svelte'
   import { devToolsAvailable } from '../../stores/devoverlays'
+  import { visualMode } from '../../stores/listselect'
   import { t } from '../../lib/i18n'
 
   // devMode is read once at startup: it's fixed for the lifetime of the
@@ -177,11 +178,16 @@
         {/if}
       </div>
     {/if}
+    <AgentProposals />
     <!-- which profile you are writing from. Only once there is more than one:
          an install with a single profile has no question to answer. -->
     {#if $profiles.length > 1 && $currentProfile}
-      <AgentProposals />
       <ProfileChip />
+    {/if}
+    <!-- app vim mode has no other way to show that motions are extending a
+         selection rather than only moving. -->
+    {#if $visualMode}
+      <span class="dev-badge visual-badge" role="status">{$t('common.statusBar.visualMode')}</span>
     {/if}
     {#if $prefs.statusUnread && inboxUnread > 0}
       <button type="button" class="outbox-btn unread" title={$t('common.statusBar.unreadTitle')} on:click={openInbox}>
@@ -571,6 +577,11 @@
   .nightly-badge {
     background: var(--nightly-bg);
     color: var(--nightly);
+  }
+
+  .visual-badge {
+    background: var(--selection-bg);
+    color: var(--accent);
   }
 
   .low-power:hover {

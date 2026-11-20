@@ -133,6 +133,13 @@ func (t *accountTransmitter) Transmit(ctx context.Context, m outbox.Message) err
 	sender := psmtp.NewSender(cfg,
 		psmtp.WithLogger(t.app.log),
 		psmtp.WithSentAppender(t.appendSentFor(*account)),
+		psmtp.WithBackground(func(fn func()) {
+			t.app.sentCopies.Add(1)
+			go func() {
+				defer t.app.sentCopies.Done()
+				fn()
+			}()
+		}),
 	)
 	return sender.Transmit(ctx, m)
 }

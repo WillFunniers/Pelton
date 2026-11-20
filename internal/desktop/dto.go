@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/peltonapp/Pelton/internal/crypto"
+	pimap "github.com/peltonapp/Pelton/internal/imap"
 	"github.com/peltonapp/Pelton/internal/mailview"
 	"github.com/peltonapp/Pelton/internal/storage"
 )
@@ -181,10 +182,16 @@ type AttachmentDTO struct {
 // offer "load remote images".
 type MessageDetailDTO struct {
 	MessageSummaryDTO
-	ToAddresses  string `json:"toAddresses"`
-	CcAddresses  string `json:"ccAddresses"`
-	BodyPlain    string `json:"bodyPlain"`
-	BodyHTMLSafe string `json:"bodyHtmlSafe"`
+	// MessageID is the bare RFC Message-ID, empty when missing or invalid.
+	MessageID string `json:"messageId"`
+	// InReplyTo lists bare parent IDs; unavailable ancestry is an empty list.
+	InReplyTo []string `json:"inReplyTo"`
+	// References lists bare ancestor IDs; unavailable ancestry is an empty list.
+	References   []string `json:"references"`
+	ToAddresses  string   `json:"toAddresses"`
+	CcAddresses  string   `json:"ccAddresses"`
+	BodyPlain    string   `json:"bodyPlain"`
+	BodyHTMLSafe string   `json:"bodyHtmlSafe"`
 	// BodyQuote is the message as plain text for a reply or forward to quote.
 	// It is BodyPlain when the message has a text part, and the html rendered
 	// down to text when it does not, which is the case BodyPlain is empty for
@@ -348,7 +355,7 @@ func folderRole(f storage.Folder) string {
 			return roleArchive
 		}
 	}
-	switch strings.ToUpper(f.IMAPPath) {
+	switch strings.ToUpper(pimap.StripInboxNamespace(f.IMAPPath, f.Delimiter)) {
 	case storage.FolderInbox:
 		return roleInbox
 	case strings.ToUpper(storage.FolderSent):
