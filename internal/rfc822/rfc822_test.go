@@ -374,6 +374,7 @@ func TestSubjectOnUnreadableInputIsEmpty(t *testing.T) {
 	}
 	if got := Subject([]byte("not a message at all")); got != "" {
 		t.Fatalf("Subject(garbage) = %q, want empty", got)
+	}
 }
 
 // An image part marked Content-Disposition: inline is what Vaultwarden and most

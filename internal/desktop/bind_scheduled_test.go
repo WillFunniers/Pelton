@@ -135,15 +135,15 @@ func TestScheduledPreviewReadsTheFrozenMessage(t *testing.T) {
 	}
 }
 
-// A true inline image (Content-Disposition: inline) cannot be substituted into
-// the body: rfc822.Parse reads those parts as body candidates, not attachments,
-// so it yields no bytes and no content id for them. The reference is left as-is
-// and the frame's CSP refuses it, rather than the preview reaching out for it.
+// A true inline image (Content-Disposition: inline) is now surfaced by
+// rfc822.Parse as an attachment with its content id, so the preview resolves the
+// reference to a data: uri instead of leaving it for the frame's CSP to refuse.
 //
-// This is asserted rather than merely tolerated so that the limit is visible: if
-// the parser ever starts surfacing inline parts, this test fails and the
-// resolution path can be turned on deliberately.
-func TestScheduledPreviewLeavesInlineCIDUnresolved(t *testing.T) {
+// This used to assert the opposite: the parser read those parts as body
+// candidates and yielded no bytes, so the reference was left unresolved. Upstream
+// v2026.4.8 fixed that (4b1b466), which is exactly the change this test was
+// written to catch.
+func TestScheduledPreviewResolvesInlineCID(t *testing.T) {
 	app, db, ctx := scheduledTestApp(t)
 
 	id := queueScheduled(t, db, ctx, &smtp.Message{
@@ -161,9 +161,13 @@ func TestScheduledPreviewLeavesInlineCIDUnresolved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preview: %v", err)
 	}
-	if !strings.Contains(dto.HTML, "cid:chart@example.com") {
-		t.Errorf("html = %q, want the inline reference left for the CSP to refuse", dto.HTML)
+	if strings.Contains(dto.HTML, "cid:chart@example.com") {
+		t.Errorf("html = %q, want the inline reference resolved to a data: uri", dto.HTML)
 	}
+	if !strings.Contains(dto.HTML, "data:image/png;base64,") {
+		t.Errorf("html = %q, want the inline image inlined as a data: uri", dto.HTML)
+	}
+	// the inline part is in the body now, so it is not listed as an attachment
 	if len(dto.Attachments) != 0 {
 		t.Errorf("attachments = %+v, want none: the only part was the inline image", dto.Attachments)
 	}

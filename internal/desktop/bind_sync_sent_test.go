@@ -268,10 +268,10 @@ func TestTransmitReplyPreservesQueuedBytesInSent(t *testing.T) {
 	if !bytes.Equal(data, queued.Raw) {
 		t.Error("SMTP DATA differs from queued MIME bytes")
 	}
-	if len(client.appended) != 1 {
-		t.Fatalf("appended %d messages to Sent, want 1", len(client.appended))
+	if len(client.appendedSent) != 1 {
+		t.Fatalf("appended %d messages to Sent, want 1", len(client.appendedSent))
 	}
-	if !bytes.Equal(client.appended[0], queued.Raw) {
+	if !bytes.Equal(client.appendedSent[0], queued.Raw) {
 		t.Error("Sent APPEND differs from queued MIME bytes")
 	}
 	for _, copy := range []struct {
@@ -280,7 +280,7 @@ func TestTransmitReplyPreservesQueuedBytesInSent(t *testing.T) {
 	}{
 		{"queued", queued.Raw},
 		{"SMTP DATA", data},
-		{"Sent APPEND", client.appended[0]},
+		{"Sent APPEND", client.appendedSent[0]},
 	} {
 		parsed, err := mail.ReadMessage(bytes.NewReader(copy.raw))
 		if err != nil {
@@ -351,15 +351,15 @@ func TestTransmitDoesNotWaitForTheSentCopy(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("Transmit waited for the imap lock held by a sync")
 	}
-	if len(client.appended) != 0 {
+	if len(client.appendedSent) != 0 {
 		t.Fatal("the copy to Sent ran while a sync held the imap lock")
 	}
 
 	syncMu.Unlock()
 	locked = false
 	app.sentCopies.Wait()
-	if len(client.appended) != 1 {
-		t.Fatalf("appended %d messages to Sent once the lock was free, want 1", len(client.appended))
+	if len(client.appendedSent) != 1 {
+		t.Fatalf("appended %d messages to Sent once the lock was free, want 1", len(client.appendedSent))
 	}
 }
 
@@ -396,10 +396,13 @@ func TestTransmitDoesNotWaitForASync(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Transmit: %v", err)
 		}
-		if len(client.appendedSent) != 1 {
-			t.Fatalf("appended %d messages to Sent, want 1", len(client.appendedSent))
-		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("the send waited on the sync lock: a sync in flight and a queued send deadlock each other")
+	}
+	// the copy to Sent runs off the send path (smtp.WithBackground), so wait for
+	// it rather than assuming Transmit returned after it.
+	app.sentCopies.Wait()
+	if len(client.appendedSent) != 1 {
+		t.Fatalf("appended %d messages to Sent, want 1", len(client.appendedSent))
 	}
 }
