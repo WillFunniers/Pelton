@@ -2,8 +2,8 @@
 >
 > 这是由 WyMok 维护的 Pelton 社区定制版本，并非 Pelton 官方发行版，也不代表原作者或上游项目的
 > 官方认可。Pelton 仍为上游项目，其原始作者与历史请见
-> [peltonapp/Pelton](https://github.com/peltonapp/Pelton)。本定制基于上游 `v2026.4.6`
-> （提交 `79c9858`），以 GPL-3.0-or-later 分发。与上游的差异及构建方式见
+> [peltonapp/Pelton](https://github.com/peltonapp/Pelton)。本定制基于上游 `v2026.4.8`
+> （提交 `31ca1d3e`），以 GPL-3.0-or-later 分发。与上游的差异及构建方式见
 > [PELTON-PERSONAL.md](PELTON-PERSONAL.md)。
 
 <p align="center">

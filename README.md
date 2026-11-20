@@ -3,7 +3,7 @@
 > This is an unofficial, community-maintained customization of Pelton by WyMok. It is not an
 > official Pelton release and is not affiliated with or endorsed by the original authors. Pelton
 > remains the upstream project; see [peltonapp/Pelton](https://github.com/peltonapp/Pelton) for its
-> original authorship and history. Based on upstream `v2026.4.6` (commit `79c9858`),
+> original authorship and history. Based on upstream `v2026.4.8` (commit `31ca1d3e`),
 > GPL-3.0-or-later. See [PELTON-PERSONAL.md](PELTON-PERSONAL.md) for what differs and how to build it.
 
 <p align="center">

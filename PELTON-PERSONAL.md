@@ -5,8 +5,8 @@ open-source, privacy-first desktop email client (Go + Wails backend, Svelte 5 fr
 The Simplified Chinese catalog was developed here and has since been merged upstream; what
 remains specific to this repository is the smaller set of customisations listed below.
 
-- **Upstream base**: `v2026.4.6` (commit `79c9858`)
-- **This line's version string**: `v2026.4.6_zh.1`
+- **Upstream base**: `v2026.4.8` (commit `31ca1d3e`)
+- **This line's version string**: `v2026.4.8_zh.1`
 - **Licence**: GPL-3.0-or-later, unchanged from upstream. See [LICENSE](LICENSE).
 - **Platform builds**: Windows x86-64 (built and tested by the maintainer);
   macOS and Linux are unmodified upstream code paths and have not been verified here.
@@ -58,11 +58,11 @@ wails dev
 
 # production build (Windows)
 wails build -platform windows/amd64 -trimpath \
-  -ldflags "-X main.version=v2026.4.6_zh.1"
+  -ldflags "-X main.version=v2026.4.8_zh.1"
 
 # production build with the NSIS installer
 wails build -platform windows/amd64 -trimpath -nsis \
-  -ldflags "-X main.version=v2026.4.6_zh.1"
+  -ldflags "-X main.version=v2026.4.8_zh.1"
 ```
 
 `-trimpath` is deliberate: it keeps the build machine's paths out of the binary. A build
